@@ -1,0 +1,29 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "autoseguro-agent"
+version = "0.0.0"
+description = "Agente de cotacao de seguro auto (desafio FDE Namastex)"
+# Verificado em 3.12 (container, mesma base do servico de cotacao) e 3.14 (host). Nao declaramos o que nao testamos.
+requires-python = ">=3.12"
+# Dependencias de runtime entram junto com a etapa que as usa (ver docs/PLAN.md).
+dependencies = []
+
+[project.optional-dependencies]
+dev = ["pytest>=8"]
+analysis = ["pandas>=2.2", "pyarrow>=15"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+pythonpath = [".", "src"]  # "src": cada checkout testa o proprio codigo, sem depender de `pip install -e`
+testpaths = ["tests"]
+addopts = "-ra"
+markers = [
+    "integration: precisa da API de cotacao no ar (make test-integration)",
+    "contract: compara o codigo com a API real (make test-integration)",
+    "llm_real: chama a API da Anthropic (opt-in; precisa de ANTHROPIC_API_KEY)",
+]

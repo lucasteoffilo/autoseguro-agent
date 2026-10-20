@@ -1,0 +1,31 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.uv/
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+
+# env / secrets (NUNCA commitar). O .env.example e versionado de proposito.
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+
+# banco local e saidas de execucao (o log do entregavel e exportado e copiado de forma explicita)
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
+var/
+
+# OS / editores
+.DS_Store
+.idea/
+.vscode/
+*.log
+
+# ...mas os logs de IA sao entregavel (ver README do desafio). Passam por limpeza antes de commitar.
+!ai-logs/**
