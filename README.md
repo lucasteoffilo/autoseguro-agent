@@ -3,7 +3,7 @@
 Agente de vendas de seguro auto para o desafio técnico FDE / AI Engineer da Namastex: conversa com o lead,
 qualifica, cota um plano pela API de cotação e decide entre resolver sozinho e passar para um humano.
 
-> **Estado: Etapas 0 e 1 concluídas (fundação, análise e decisões de desenho); o roteiro vai até a Etapa 8.** O agente ainda não existe:
+> **Estado: Etapas 0 e 1 concluídas (fundação, análise e decisões de desenho); o roteiro vai até a Etapa 8. A Etapa 2a aguarda aprovação do plano.** O agente ainda não existe:
 > só o contrato do destino do handoff (`src/autoseguro/handoff.py`).
 > Esta página cresce a cada etapa. O que está marcado _(planejado)_ descreve o que vem, não o que já roda.
 > Roteiro e critérios de corte em [`docs/PLAN.md`](docs/PLAN.md); achados que motivam o desenho em [`docs/FINDINGS.md`](docs/FINDINGS.md).
@@ -78,16 +78,22 @@ com `HANDOFF_NEXT_STEP_TEXT` (vazio por padrão).
 fila entram **além** do SQLite, sem mexer no agente, e qualquer destino novo tem que passar na suíte de contrato
 [`tests/sink_contract.py`](tests/sink_contract.py) (idempotência por `trace_id`, falha transitória distinta de permanente, pacote imutável). Nenhuma integração está implementada.
 
-### D3. Modelo por passo, latência fim a fim e custo _(provisório até a medição com o modelo real)_
+### D3. O LLM redige a conversa; modelo, latência e custo _(provisórios até o `smoke-llm`)_
 
 Resumo; as tabelas e as premissas estão em [`docs/PLAN.md`](docs/PLAN.md), seção 5.
 
-- **O gargalo do p95 de um turno com cotação é o modo lento de 8s da `/quote`, não o LLM** (8,1s sozinha; 9 a 10s somando um LLM rápido ou médio). O LLM decide a latência dos turnos **sem** cotação.
-- **Cortes:** fast-path por regex para respostas simples (tira o LLM de ~40% dos turnos e do caminho crítico da cotação); modelo pequeno na extração;
-  "um instante" aos 2,5s só em turno que chama a `/quote`; timeout de 6s por chamada de LLM e prazo de 20s por turno.
-- **Modelo:** `claude-haiku-5-5` na extração (esforço baixo, saída estruturada), escalonando uma vez para `claude-sonnet-5-5` quando a saída vier inválida ou ambígua.
-  Texto ao lead e resumo de handoff não usam LLM. **Custo:** centavos por conversa (de ~US$ 0,001 a ~US$ 0,006), então latência e precisão decidem, não preço.
-- **O que ainda é hipótese:** a latência do LLM e a contagem de tokens. A Etapa 4a mede as duas com chamadas reais.
+- **O LLM redige os turnos de conversa** (saudação, próxima pergunta, explicação de carência, dúvida, objeção) **na mesma chamada que extrai os slots**: saída
+  estruturada `{slots, intent, reply}`, sem chamada extra. O `reply` passa por um guardrail (sem dinheiro, prazo, promessa de desconto ou garantia de cobertura) e,
+  se reprovar, cai para o template do passo. **Cotação, recusa e handoff são template fixo**, porque carregam número e promessa.
+- **Custo dessa decisão:** +36 a 39% no custo e +0,3 a 0,8s no p95 de um turno (modelo rápido). Ela tira um modelo de tamanho médio do critério de 5s para turnos
+  sem cotação (4,7s → 8,5s), então na prática **exige um modelo pequeno** na chamada única.
+- **O p95 de um turno com cotação continua dominado pelo modo lento de 8s da `/quote`** (8,1s sozinha; 9,5s somando um LLM rápido).
+- **Teto de 20s por turno:** mensagem honesta + handoff `QUOTE_UNAVAILABLE`, nunca silêncio.
+- **Modelo:** `claude-haiku-5-5` (esforço baixo, saída estruturada), escalonando uma vez para `claude-sonnet-5-5` quando a saída vier inválida ou ambígua.
+  **Custo:** centavos por conversa (US$ 1,36 por mil conversas com Haiku; US$ 6,79 com 10% de escalonamento), então latência e precisão decidem, não preço.
+- **Fast-path por regex nasce desligado.** Só valeria para resposta direta ao slot perguntado com valor inequívoco, e rende ~0,2 a 0,4s de p95. O `smoke-llm` mede a
+  divergência regex vs LLM nas mesmas mensagens; se divergir, sai.
+- **O que ainda é hipótese:** a latência do LLM e a contagem de tokens. O `smoke-llm` (Etapa 2a) mede as duas com chamadas reais, usando só mensagens escritas à mão e sem PII.
 
 ### Demais decisões
 
