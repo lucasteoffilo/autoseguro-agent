@@ -143,7 +143,7 @@ def main(argv: list[str] | None = None) -> int:
     print(f"\nFALHA ({res.error}).", file=sys.stderr)
     if res.detail:
         print(f"  detalhe do provedor: {redact(res.detail, [key])}", file=sys.stderr)
-    print(f"  causa provavel: {explain_failure(cfg, res.error, res.http_status)}", file=sys.stderr)
+    print(f"  causa provavel: {explain_failure(cfg, res.error, res.http_status, res.detail)}", file=sys.stderr)
     if res.http_status == 429 and res.quota_kind == "daily":
         return 4
     return 6 if protocol else 7 if transient else 1

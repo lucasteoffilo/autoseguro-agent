@@ -1,20 +1,41 @@
 """Causa PROVAVEL de uma falha de LLM, em portugues, para o smoke e o ping.
 
 E uma dica, nao um diagnostico: o texto diz "provavel" e aponta a variavel de ambiente a conferir. Nao recebe nem imprime a chave: so o codigo
-HTTP, o erro do adaptador e a configuracao (nomes e valores nao secretos).
+HTTP, o erro do adaptador, a configuracao (nomes e valores nao secretos) e o detalhe do erro, que o adaptador ja entrega mascarado. Do detalhe
+sai so o nome do provedor de origem (`provedor=<nome>`, o `provider_name` do `error.metadata` do OpenRouter), passado de novo por `redact`.
+
+Um 404 tem DUAS causas que a mensagem precisa listar, porque uma mensagem que aponta so uma induz ao palpite errado (ja induziu): o modelo (ou o
+provedor dele) fora do ar, e nenhum provedor aceitar todos os parametros do pedido.
 """
 from __future__ import annotations
 
+import re
+
 from .config import LLMConfig
+from .redact import redact
+
+_PROVIDER = re.compile(r"(?:^|\| )provedor=([^|]+?)\s*(?:\||$)")
 
 
-def _pedido(cfg: LLMConfig) -> str:
+def _parametros(cfg: LLMConfig) -> list[str]:
+    """Os parametros do pedido que um provedor pode nao aceitar. Vazio = pedido simples."""
     parts = []
     if cfg.structured_output == "json_schema":
         parts.append("json_schema" + (" + require_parameters" if cfg.provider == "openrouter" else ""))
     if cfg.reasoning_effort and cfg.provider == "openrouter":
         parts.append(f"reasoning={cfg.reasoning_effort}")
-    return ", ".join(parts) or "sem saida estruturada"
+    return parts
+
+
+def _pedido(cfg: LLMConfig) -> str:
+    return ", ".join(_parametros(cfg)) or "sem saida estruturada"
+
+
+def provider_name_from(detail: str | None) -> str | None:
+    """O nome do provedor de origem, se o detalhe do erro o trouxer (`... | provedor=Nvidia | retorno=...`). Mascarado de novo, por precaucao."""
+    m = _PROVIDER.search(detail or "")
+    name = redact(m.group(1).strip()) if m else ""
+    return name or None
 
 
 def describe_request(cfg: LLMConfig) -> str:
@@ -22,8 +43,8 @@ def describe_request(cfg: LLMConfig) -> str:
     return _pedido(cfg)
 
 
-def explain_failure(cfg: LLMConfig, error: str | None, status: int | None) -> str:
-    """Uma ou duas frases: o que provavelmente aconteceu e o que conferir."""
+def explain_failure(cfg: LLMConfig, error: str | None, status: int | None, detail: str | None = None) -> str:
+    """Uma ou duas frases: o que provavelmente aconteceu e o que conferir. `detail` e o detalhe do erro do adaptador (so serve para nomear o provedor)."""
     if status == 401:
         return "A chave foi recusada (invalida, revogada ou de outra conta). Confira LLM_API_KEY (ou OPENROUTER_API_KEY) no .env."
     if status == 402:
@@ -31,10 +52,15 @@ def explain_failure(cfg: LLMConfig, error: str | None, status: int | None) -> st
     if status == 403:
         return "O provedor recusou o conteudo (moderacao) ou a chave nao tem permissao para este modelo."
     if status == 404:
-        if cfg.structured_output == "json_schema":
-            return (f"Modelo inexistente, ou nenhum provedor aceita TODOS os parametros do pedido ({_pedido(cfg)}). "
-                    "Tente LLM_STRUCTURED_OUTPUT=none, ou outro LLM_MODEL.")
-        return "Modelo ou endpoint inexistente. Confira LLM_MODEL e LLM_BASE_URL."
+        name = provider_name_from(detail)
+        provedor = f"o provedor {name} (o que devolveu o erro)" if name else "o provedor dele"
+        fora = f"o modelo ou {provedor} esta fora do ar, ou o modelo nao existe"
+        if _parametros(cfg):
+            return (f"Duas hipoteses: (1) {fora}; (2) nenhum provedor aceita TODOS os parametros do pedido ({_pedido(cfg)}). "
+                    "Para separar, repita com um pedido simples (LLM_STRUCTURED_OUTPUT=none e LLM_REASONING_EFFORT=off): se o 404 continuar, e a (1), "
+                    "troque o LLM_MODEL; se passar, e a (2), tire o parametro suspeito.")
+        return (f"O pedido ja e simples, entao os parametros nao sao a causa: {fora}. "
+                "Confira LLM_MODEL e LLM_BASE_URL, ou troque de modelo.")
     if status in (400, 422):
         return (f"O pedido foi rejeitado por formato ou parametro ({_pedido(cfg)}). Suspeitos, nesta ordem: LLM_STRUCTURED_OUTPUT=none, "
                 "LLM_REASONING_EFFORT=off, LLM_MAX_TOKENS.")

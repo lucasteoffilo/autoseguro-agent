@@ -120,14 +120,31 @@ def test_a_401_explains_how_to_fix_the_key(tmp_path, server, capsys):
     assert "[FALHA] autenticacao nao rejeitada (sem 401/403), resposta HTTP 401" in captured.out and "Confira LLM_API_KEY" in captured.err
 
 
-def test_a_404_blames_the_request_not_the_key_and_names_json_schema_and_require_parameters(tmp_path, server, capsys):
-    """O caso que o ping existe para pegar: o OpenRouter nao aceita o pedido como montado."""
+def test_a_404_blames_neither_the_key_nor_only_the_request_and_lists_both_hypotheses(tmp_path, server, capsys):
+    """O caso que o ping existe para pegar. A mensagem antiga apontava so o pedido, e o provedor de origem estava fora do ar: mensagem enganosa e bug."""
     server.reply(404, error_json(404, "No endpoints found that can handle the requested parameters"))
     assert ping(tmp_path, server) == 6
     captured = capsys.readouterr()
     assert "[ok] autenticacao nao rejeitada (sem 401/403), resposta HTTP 404" in captured.out, "404 nao e recusa de autenticacao (e tambem nao a prova)"
     assert "[FALHA] pedido aceito como montado (json_schema + require_parameters" in captured.out
     assert "json_schema + require_parameters" in captured.err and "LLM_STRUCTURED_OUTPUT=none" in captured.err
+    assert "(1) o modelo ou o provedor dele esta fora do ar, ou o modelo nao existe" in captured.err
+    assert "(2) nenhum provedor aceita TODOS os parametros" in captured.err
+
+
+def test_the_ping_hands_the_provider_detail_to_the_diagnosis(tmp_path, server, monkeypatch):
+    """Encanamento: o `provedor=` do detalhe so chega ao texto se o ping passar o detalhe adiante."""
+    seen = {}
+    real = llm_ping.explain_failure
+
+    def spy(cfg, error, status, detail=None):
+        seen["args"] = (error, status, detail)
+        return real(cfg, error, status, detail)
+
+    monkeypatch.setattr(llm_ping, "explain_failure", spy)
+    server.reply(404, error_json(404, "Provider returned error"))
+    assert ping(tmp_path, server) == 6
+    assert seen["args"] == ("http_404", 404, "Provider returned error")
 
 
 def test_a_protocol_error_inside_a_200_is_still_a_protocol_error(tmp_path, server):

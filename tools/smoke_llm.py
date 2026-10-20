@@ -300,7 +300,7 @@ def _report_abort(kind: str, res: LLMResult, cfg: LLMConfig, key: str | None, do
     lines = [f"ABORTADO por {kind} ({res.error}) na chamada {done + 1} de {planned}."]
     if res.detail:
         lines.append(f"  detalhe do provedor: {res.detail}")
-    lines.append(f"  causa provavel: {explain_failure(cfg, res.error, res.http_status)}")
+    lines.append(f"  causa provavel: {explain_failure(cfg, res.error, res.http_status, res.detail)}")
     today = f" (hoje {quota.used_today()}/{quota.daily_limit})" if free else ""
     rest = planned - done - 1
     lines.append(f"  requisicoes gastas nesta execucao: {spent}{today}. As {rest} restantes do plano NAO foram enviadas"
