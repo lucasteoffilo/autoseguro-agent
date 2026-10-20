@@ -31,7 +31,7 @@ def test_pii_scanner_catches_what_it_should():
     """Guarda do guarda: se o scanner parar de enxergar, a higiene acima vira teatro."""
     # Amostras montadas em tempo de execucao: o literal completo nao pode existir na fonte deste arquivo.
     samples = ["111.222" + ".333-44", "a" + "@" + "b.com", "+55 11 9" + "1234-5678", "ABC1" + "D23",
-               "/Users" + "/fulano/x", "sk-ant" + "-abcdefgh12"]
+               "/Users" + "/fulano/x", "sk-ant" + "-abcdefgh12", "sk-or" + "-v1-abcdefgh12"]
     fake = [("x.txt", ", ".join(samples))]
     kinds = {f.split("[")[1].rstrip("]") for f in _findings(fake)}
     assert kinds == set(PATTERNS)
