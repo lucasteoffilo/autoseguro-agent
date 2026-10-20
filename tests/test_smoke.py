@@ -197,10 +197,62 @@ def test_a_free_model_costs_zero_and_the_report_names_the_model():
     assert s["usd_per_call"] == 0.0 and s["model"].endswith(":free")
 
 
-def test_provider_errors_count_against_valid_output_and_are_listed():
-    records = [rec("a", 1.0, GOOD_SCORE) for _ in range(19)] + [rec("a", 2.0, {"valid": False}, error="http_429")]
-    s = summarize(records, "x:free")
-    assert s["errors"] == {"http_429": 1} and s["valid_output_rate"] < 1.0 and not s["passes"]
+def test_model_level_failures_count_against_valid_output_and_are_listed():
+    for err in ("invalid_output:OutputError", "invalid_output:JSONDecodeError", "max_tokens", "no_text", "no_choices"):
+        s = summarize([rec("a", 1.0, GOOD_SCORE) for _ in range(19)] + [rec("a", 2.0, {"valid": False}, error=err)], "x:free")
+        assert s["errors"] == {err: 1} and s["valid_output_rate"] == 0.95 and not s["passes"], err
+
+
+def test_service_failures_are_outside_the_denominator_listed_and_warned():
+    """Timeout, conexao, 429 e 5xx sao do servico, nao do modelo: ficam fora de "saida valida", mas o relatorio avisa que o resultado e incompleto."""
+    for err in ("timeout", "connection", "http_429", "http_503", "http_408"):
+        s = summarize([rec("a", 1.0, GOOD_SCORE) for _ in range(19)] + [rec("a", 2.0, {"valid": False}, error=err)], "x:free")
+        assert s["errors"] == {err: 1} and s["service_failures"] == 1 and s["answered_calls"] == 19 and s["valid_output_rate"] == 1.0, err
+        assert s["warnings"] and "FORA do denominador" in s["warnings"][0]
+
+
+def test_outcome_classes():
+    from tools.smoke_llm import outcome_class
+    assert [outcome_class(e) for e in (None, "invalid_output:X", "max_tokens", "no_text", "no_choices", "content_filter", "timeout", "http_500", "http_429")] == [
+        "answered", "answered", "answered", "answered", "answered", "blocked", "service", "service", "service"]
+
+
+# --- bloqueio do provedor (content_filter): benigna reprova, adversarial nao (PLAN 5.6) --------------------------------------------------------
+def test_only_the_injection_message_is_marked_adversarial():
+    assert [m.id for m in MESSAGES if m.adversarial] == ["m14_injecao_de_prompt"]
+
+
+def test_a_provider_block_on_a_benign_message_fails_the_run():
+    s = summarize([rec("a", 1.0, GOOD_SCORE) for _ in range(19)] + [rec("a", 1.8, {"valid": False}, error="content_filter")], "x:free")
+    assert s["provider_blocked"] == {"benign": 1, "adversarial": 0} and not s["passes"]
+    assert not s["checks"]["0 bloqueios do provedor (content_filter) em mensagens benignas"]
+    assert s["checks"]["saida estruturada valida em 100% das chamadas que o provedor entregou"], "bloqueio nao e erro de formato do modelo"
+
+
+def test_a_provider_block_on_an_adversarial_message_is_reported_but_does_not_fail_the_run():
+    blocked = CallRecord("m14", "m", 2, False, "content_filter", 1.8, None, None, {"valid": False}, adversarial=True)
+    s = summarize([rec("a", 1.0, GOOD_SCORE) for _ in range(19)] + [blocked], "x:free")
+    assert s["provider_blocked"] == {"benign": 0, "adversarial": 1} and s["passes"]
+    assert s["valid_output_rate"] == 1.0 and s["answered_calls"] == 19
+
+
+def test_an_adversarial_message_that_WAS_answered_is_held_to_the_same_valid_output_rule():
+    invalid = CallRecord("m14", "m", 1, False, "invalid_output:OutputError", 1.8, None, None, {"valid": False}, adversarial=True)
+    s = summarize([rec("a", 1.0, GOOD_SCORE) for _ in range(19)] + [invalid], "x:free")
+    assert s["valid_output_rate"] == 0.95 and not s["passes"], "afrouxar o formato para a mensagem adversarial seria afrouxar o criterio"
+
+
+def test_run_model_marks_the_records_of_the_adversarial_message():
+    class FilterLLM:
+        provider, model, system_prompt = "x", "m:free", "sistema"
+
+        def turn(self, user_message: str) -> LLMResult:
+            return LLMResult(None, "content_filter", 1.0, None, "content_filter", http_status=200)
+
+    records = run_model(GuardedLLM(FilterLLM(), BASE), BASE, MESSAGES, 1)
+    assert [r.adversarial for r in records if not r.warmup] == [m.adversarial for m in MESSAGES]
+    s = summarize(records, "m:free")
+    assert s["provider_blocked"] == {"benign": 14, "adversarial": 1} and not s["passes"]
 
 
 def test_projected_turn_p95_comes_from_the_MEASURED_latencies_and_can_fail_the_criterion():
@@ -285,7 +337,8 @@ def _recorded_records():
             o = c["output"]
             res = LLMResult(TurnOutput(tuple(SlotValue(s["slot"], s["value"], s["uncertain"]) for s in o["slots"]), o["intent"], tuple(o["facts_used"]), o["reply"]),
                             None, 1.9, Usage(1340, 61), "stop")
-        out.append(CallRecord(msg.id, "dots", c["repeat"], False, res.error, res.latency_s, None, None, score_call(msg, res, BASE), None, res.http_status))
+        out.append(CallRecord(msg.id, "dots", c["repeat"], False, res.error, res.latency_s, None, None, score_call(msg, res, BASE), None, res.http_status,
+                              msg.adversarial))
     return out
 
 
@@ -337,3 +390,7 @@ def test_the_old_recorded_smoke_rescored_under_the_new_delivery_rules():
     assert s["forbidden_leaks"] == 0, "nada proibido chega ao lead nas 8 chamadas de risco"
     assert s["required_fact_cited"] is True
     assert s["llm_reply_on_risk_turns_would_leak"] == 0
+    # o criterio novo de saida valida: 29 de 29 entregues pelo provedor; o content_filter do m14 e adversarial e fica a parte
+    assert s["answered_calls"] == 29 and s["valid_output_rate"] == 1.0 and s["provider_blocked"] == {"benign": 0, "adversarial": 1}
+    assert s["checks"]["saida estruturada valida em 100% das chamadas que o provedor entregou"]
+    assert s["checks"]["0 bloqueios do provedor (content_filter) em mensagens benignas"] and not s["passes"], "o resto do veredito continua NAO PASSA"

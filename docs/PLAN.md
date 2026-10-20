@@ -148,7 +148,7 @@ Tokens por conversa (hit 95%): 5 chamadas = 13,2K de entrada (10,5K do cache) + 
 **Garantias:** cada mensagem é `hand-written`; o detector de PII roda em **todo** payload (sistema e usuário) e **aborta antes da chamada**; o script não acessa o dataset; **a chave nunca é impressa, gravada nem repetida em erro** (`redact` em toda saída, coberto por `tests/test_key_safety.py`); o relatório, que cita provedor, modelo e modelo servido, vai para `var/smoke/` (ignorado pelo git).
 
 **Mede:** latência por chamada e o **p95 do turno projetado a partir dela** (contra 5s e 12s); tokens/s e `usage`; saída estruturada válida; extração separando **erro silencioso** de omissão; aprovação do guardrail e as violações; **tamanho do `reply` (alvo 40 palavras)**; **divergência regex vs LLM** (decide o fast-path); custo por chamada.
-**Passa se:** 0 extrações erradas em silêncio; saída válida em 100%; p95 projetado do turno dentro do critério; guardrail aprova ≥ 80% **dos replies redigidos pelo LLM** (as intenções de risco saem por template); **intenção de risco reconhecida em 100% das mensagens de risco**; ≥ 90% dos replies do LLM com ≤ 40 palavras e nenhum acima de 50; nenhum termo proibido **no texto entregue ao lead**.
+**Passa se:** 0 extrações erradas em silêncio; saída válida em 100% **das chamadas que o provedor entregou** e 0 bloqueios do provedor em mensagens benignas (seção 5.6); p95 projetado do turno dentro do critério; guardrail aprova ≥ 80% **dos replies redigidos pelo LLM** (as intenções de risco saem por template); **intenção de risco reconhecida em 100% das mensagens de risco**; ≥ 90% dos replies do LLM com ≤ 40 palavras e nenhum acima de 50; nenhum termo proibido **no texto entregue ao lead**.
 **O que ele não faz:** 15 mensagens **não certificam taxas** (é um alarme contra problema grosseiro, não um benchmark), e **regex não lê sentido**: a explicação de carência (`m10`), a objeção (`m11`) e a injeção (`m14`) precisam ser lidas a olho no relatório.
 
 ### 5.5 OpenRouter: o que foi conferido na documentação (2026-10-20) e o que não foi
@@ -171,6 +171,27 @@ Conferido na documentação e no catálogo de modelos **antes de codar**. Em 202
 **Fato operacional: endpoints gratuitos oscilam.** O primeiro alvo, `nvidia/nemotron-3-super-120b-a12b:free`, devolveu 404 em 2026-10-20 porque o único provedor dele (Nvidia) estava fora do ar: uptime de 0% nos 30 minutos anteriores e 44% no dia. Diagnóstico com 2 requisições: o pedido pelado (sem `json_schema`, `require_parameters` nem `reasoning`) falhou igual, o que descarta os parâmetros; o `dots-3-note-preview` aceitou o pedido completo e devolveu saída válida (**1 amostra**: 2,15 s, 1328 tokens de entrada, 54 de saída, 0 de raciocínio, reply de 25 palavras aprovado pelo guardrail). Uma amostra não é p95 nem taxa de acerto. Consequência de desenho: o `llm-ping` antes do smoke, a falha rápida em erro de protocolo e **o mock determinístico como o caminho reproduzível** (2b).
 A 1328 de entrada, medida por esse modelo, está abaixo dos ~2400 do modelo de custo; é o tokenizador de um modelo, não uma correção do modelo.
 **Privacidade:** modelos free podem reter ou treinar com os prompts. Por isso o gate de PII fica ligado em todo caminho e o smoke só envia as 15 mensagens escritas à mão, sem PII. **Dado real do dataset, mesmo mascarado, não vai a modelo free.**
+
+### 5.6 Bloqueio do provedor (`content_filter`): critério do smoke e especificação da 2b
+
+**Origem (smoke de 2026-10-20):** a mesma mensagem adversarial (m14, a injeção), com a mesma entrada, passou na 1ª repetição e voltou na 2ª com `finish_reason=content_filter`, sem conteúdo e com 60 tokens gerados. O filtro agiu sobre a **geração**, não sobre a entrada, e **não é determinístico**. A amostra é 1 mensagem × 2 repetições: não dá taxa.
+
+**Classificação:** `LLMResult.error = "content_filter"`, HTTP 200. **Não** é falha de serviço (não alimenta o disjuntor), **não** é erro de protocolo (não aborta) e **não** é erro de formato do modelo.
+
+**Critério do smoke (redação aprovada em 2026-10-20):**
+> *Saída válida em 100% das chamadas que o provedor entregou. Truncamento, texto vazio e saída fora do schema contam como inválidos. Bloqueio do provedor (`content_filter`) é medido à parte: 0 em mensagens benignas; em adversariais é aceito, desde que o sistema o trate sem deixar o turno sem resposta. Falhas de serviço (timeout, 5xx, 429) ficam fora do denominador, aparecem no relatório com um aviso de resultado incompleto, e têm o disjuntor.*
+
+Por que separar: contar o filtro como "formato inválido" culpa o modelo pelo que foi do provedor e esconderia um problema real de formato; mas bloquear um lead legítimo é problema de produto, então a mensagem **benigna** continua em zero. A mensagem adversarial que **foi respondida** segue a mesma regra de formato das demais (afrouxar o formato para ela seria afrouxar o critério). Implementação: `SmokeMessage.adversarial` (só o m14) e `outcome_class` em `tools/smoke_llm.py`.
+
+**Comportamento do turno — a implementar na 2b:**
+1. **1 retry.** A chamada é repetida uma vez, dentro do limite por chamada (6 s) e do teto de 20 s do turno (`budgets.LLM_MAX_ATTEMPTS = 2`).
+2. **Se filtrar de novo:** o turno **não extrai nada** (o `SlotLedger` não é tocado) e o lead recebe a **pergunta pendente por template** (`questions.ask` ou `questions.confirm`): nunca silêncio e nunca texto do modelo. Registro: `reply_source=template_fallback`, `llm_error=content_filter`, `attempt=2`.
+3. **No 2º turno seguido filtrado:** `SAFETY_GUARD` com `failed_component=llm`, detalhe `content_filter` e o texto de handoff genérico (D2). Um turno bem-sucedido zera o contador.
+
+Por que não `SAFETY_GUARD` de cara: a repetição 1 mostra que a mesma mensagem passa, e um handoff imediato gastaria uma pessoa num bloqueio intermitente. Por que não ignorar: o lead não pode ficar sem resposta.
+**Registro (proposta, não implementada):** o adaptador descarta o conteúdo quando vem `content_filter`, então hoje não dá para auditar o que foi bloqueado. Guardar `native_finish_reason` e se veio conteúdo, mascarado.
+
+**Testes de aceitação da 2b:** (i) filtrado na 1ª tentativa e ok no retry → turno normal, 1 retry registrado; (ii) filtrado nas duas → resposta é a pergunta pendente por template, nenhum slot alterado, sem `SAFETY_GUARD`; (iii) 2º turno seguido filtrado → `SAFETY_GUARD` com componente `llm`; (iv) um turno bom entre dois filtrados → sem `SAFETY_GUARD`; (v) o filtro não conta no disjuntor nem como erro de protocolo; (vi) nenhuma conversa fica sem resposta visível dentro do teto de 20 s.
 
 ## 6. Guardrail do `reply` e base de fatos
 

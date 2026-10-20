@@ -127,6 +127,16 @@ class CallRecord:
     score: dict
     served_model: str | None = None
     http_status: int | None = None
+    adversarial: bool = False
+
+
+def outcome_class(error: str | None) -> str:
+    """Quem falhou. "answered": o provedor entregou uma resposta (boa ou ruim: saida fora do schema, truncada ou vazia e falha do MODELO e conta
+    contra a saida valida). "blocked": o provedor bloqueou (`content_filter`), o que nao e erro de formato do modelo e e medido a parte.
+    "service": timeout, conexao, 429, 5xx: falha do servico, fora do denominador (o disjuntor cuida delas)."""
+    if error is None or error.startswith("invalid_output") or error in ("max_tokens", "no_text", "no_choices"):
+        return "answered"
+    return "blocked" if error == "content_filter" else "service"
 
 
 def score_call(msg: SmokeMessage, res: LLMResult, base: FactBase, violations: tuple[Violation, ...] | None = None, reply: Reply | None = None) -> dict:
@@ -198,7 +208,7 @@ def run_model(llm: GuardedLLM, base: FactBase, messages, repeats: int, progress=
                                   None if res.usage is None else res.usage.__dict__,
                                   None if res.output is None else {"slots": [s.__dict__ for s in res.output.slots], "intent": res.output.intent,
                                                                    "facts_used": list(res.output.facts_used), "reply": res.output.reply},
-                                  score_call(msg, res, base, gres.violations), res.served_model, res.http_status))
+                                  score_call(msg, res, base, gres.violations), res.served_model, res.http_status, msg.adversarial))
         if progress:
             progress(i, len(plan), msg.id, res.error, res.latency_s)
     return records
@@ -216,6 +226,9 @@ def _derived_limit() -> float:
 
 def summarize(records: list[CallRecord], model: str) -> dict:
     rs = [r for r in records if not r.warmup]
+    answered = [r for r in rs if outcome_class(r.error) == "answered"]
+    blocked = [r for r in rs if outcome_class(r.error) == "blocked"]
+    service = [r for r in rs if outcome_class(r.error) == "service"]
     ok = [r for r in rs if r.score.get("valid")]
     lat = [r.latency_s for r in rs if r.error is None]
     neutral = [r for r in ok if r.score.get("llm_reply", True)]   # replies redigidos pelo LLM (as intencoes de risco saem por template)
@@ -241,7 +254,11 @@ def summarize(records: list[CallRecord], model: str) -> dict:
         "mean_reasoning_tokens": mean("reasoning_tokens") if usage and "reasoning_tokens" in usage[0] else None,
         "output_tokens_per_s": round(sum(r.usage["output_tokens"] / r.latency_s for r in rs if r.usage and r.latency_s) / max(1, len(usage)), 1) if usage else None,
         "usd_per_call": None if per_call_usd is None else round(per_call_usd, 6),
-        "valid_output_rate": round(len(ok) / len(rs), 3) if rs else 0.0,
+        "answered_calls": len(answered),
+        "valid_output_rate": round(len(ok) / len(answered), 3) if answered else 0.0,   # so as chamadas que o provedor ENTREGOU
+        "provider_blocked": {"benign": sum(not r.adversarial for r in blocked), "adversarial": sum(r.adversarial for r in blocked)},
+        "service_failures": len(service),
+        "warnings": ([f"{len(service)} chamada(s) sem resposta do servico ficaram FORA do denominador: o resultado e incompleto"] if service else []),
         "silent_wrong": sum(r.score["silent_wrong"] for r in ok),
         "omissions": sum(v == "omitted" for r in ok for v in r.score["slot_outcomes"].values()),
         "intent_accuracy": round(sum(r.score["intent_ok"] for r in ok) / len(ok), 3) if ok else 0.0,
@@ -262,7 +279,8 @@ def summarize(records: list[CallRecord], model: str) -> dict:
     }
     s["checks"] = {
         "0 extracoes erradas em silencio": s["silent_wrong"] == 0,
-        "saida estruturada valida em 100%": s["valid_output_rate"] == 1.0,
+        "saida estruturada valida em 100% das chamadas que o provedor entregou": s["valid_output_rate"] == 1.0,
+        "0 bloqueios do provedor (content_filter) em mensagens benignas": s["provider_blocked"]["benign"] == 0,
         f"p95 projetado do turno sem cotacao <= {budgets.TURN_P95_NO_QUOTE_S:.0f}s": bool(projection and projection["no_quote_p95_s"] <= budgets.TURN_P95_NO_QUOTE_S),
         f"p95 projetado do turno com cotacao <= {budgets.TURN_P95_WITH_QUOTE_S:.0f}s": bool(projection and projection["with_quote_p95_s"] <= budgets.TURN_P95_WITH_QUOTE_S),
         "guardrail aprova >= 80% dos replies redigidos pelo LLM (as intencoes de risco saem por template)": s["guardrail_pass_rate"] >= 0.8,
@@ -284,6 +302,10 @@ def print_report(summaries: list[dict], dry: bool) -> None:
         print(f"\n=== {s['model']}{served} | {s['calls']} chamadas (aquecimento {s['warmup_latency_s']}s, fora das estatisticas)")
         if s["errors"]:
             print(f"  ERROS: {s['errors']}")
+        print(f"  entregues pelo provedor {s['answered_calls']} | bloqueios do provedor {s['provider_blocked']} (adversarial nao reprova; o sistema trata, PLAN 5.6) "
+              f"| falhas de servico {s['service_failures']} (fora do denominador)")
+        for w in s["warnings"]:
+            print(f"  AVISO: {w}")
         if s["latency_s"]:
             l, p = s["latency_s"], s["projected_turn_p95_s"]
             print(f"  latencia por chamada  p50 {l['p50']}s  p95 {l['p95']}s  p99 {l['p99']}s  max {l['max']}s   (limite derivado do criterio: p95 <= {s['derived_llm_call_limit_p95_s']}s)")
