@@ -1,0 +1,7 @@
+--- instancia 100% falha (:8101)
+status em 30 chamadas validas: {503: 10, 502: 10, 500: 10} | corpos distintos: 1
+corpo: {"error": "upstream_unavailable", "message": "Servico de cotacao temporariamente indisponivel. Tente novamente."}
+idade=80 (seria recusa 422)            500 {"error": "upstream_unavailable", "message": "Servico de cotacao temporariamente indisponivel. Tente novamente."}
+veiculo 2001 (seria recusa 422)        500 {"error": "upstream_unavailable", "message": "Servico de cotacao temporariamente indisponivel. Tente novamente."}
+data_inicio invalida (seria 400)       502 {"error": "upstream_unavailable", "message": "Servico de cotacao temporariamente indisponivel. Tente novamente."}
+idade ausente (validacao pydantic)     422 [pydantic] ['body', 'idade'] Field required

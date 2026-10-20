@@ -1,0 +1,102 @@
+# sondagem de regras em 2026-10-20 (hoje); ano do servidor assumido = 2026
+--- baseline
+payload base                           200  premio=209.9 plano=completo mult(idade/veic/regiao)=1.0/1.0/1.0 prorata=111.95 (16/30d)
+--- idade (18-24 x1.6 | 25-29 x1.25 | 30-59 x1 | 60-75 x1.4 | 76+ recusa)
+idade=0                                422  {"error": "cotacao_recusada", "motivo": "Idade fora das faixas aceitas."}
+idade=17                               422  {"error": "cotacao_recusada", "motivo": "Idade fora das faixas aceitas."}
+idade=18                               200  premio=335.84 plano=completo mult(idade/veic/regiao)=1.6/1.0/1.0 prorata=179.11 (16/30d)
+idade=24                               200  premio=335.84 plano=completo mult(idade/veic/regiao)=1.6/1.0/1.0 prorata=179.11 (16/30d)
+idade=25                               200  premio=262.38 plano=completo mult(idade/veic/regiao)=1.25/1.0/1.0 prorata=139.94 (16/30d)
+idade=29                               200  premio=262.38 plano=completo mult(idade/veic/regiao)=1.25/1.0/1.0 prorata=139.94 (16/30d)
+idade=30                               200  premio=209.9 plano=completo mult(idade/veic/regiao)=1.0/1.0/1.0 prorata=111.95 (16/30d)
+idade=59                               200  premio=209.9 plano=completo mult(idade/veic/regiao)=1.0/1.0/1.0 prorata=111.95 (16/30d)
+idade=60                               200  premio=293.86 plano=completo mult(idade/veic/regiao)=1.4/1.0/1.0 prorata=156.73 (16/30d)
+idade=75                               200  premio=293.86 plano=completo mult(idade/veic/regiao)=1.4/1.0/1.0 prorata=156.73 (16/30d)
+idade=76                               422  {"error": "cotacao_recusada", "motivo": "Idade acima do limite de aceitacao (75 anos)."}
+idade=200                              422  {"error": "cotacao_recusada", "motivo": "Idade acima do limite de aceitacao (75 anos)."}
+idade=201                              422  [pydantic] ['body', 'idade'] Input should be less than or equal to 200
+idade=-1                               422  [pydantic] ['body', 'idade'] Input should be greater than or equal to 0
+idade=35.5 (float)                     422  [pydantic] ['body', 'idade'] Input should be a valid integer, got a number with a fractional part
+idade="35" (string)                    200  premio=209.9 plano=completo mult(idade/veic/regiao)=1.0/1.0/1.0 prorata=111.95 (16/30d)
+idade ausente                          422  [pydantic] ['body', 'idade'] Field required
+--- veiculo_ano (ano do servidor=2026; idade 0-5 x1 | 6-10 x1.15 | 11-20 x1.45 | 21+ recusa)
+veiculo_ano=2027 (idade -1)            422  {"error": "cotacao_recusada", "motivo": "Idade do veiculo fora das faixas aceitas."}
+veiculo_ano=2026 (idade 0)             200  premio=209.9 plano=completo mult(idade/veic/regiao)=1.0/1.0/1.0 prorata=111.95 (16/30d)
+veiculo_ano=2021 (idade 5)             200  premio=209.9 plano=completo mult(idade/veic/regiao)=1.0/1.0/1.0 prorata=111.95 (16/30d)
+veiculo_ano=2020 (idade 6)             200  premio=241.38 plano=completo mult(idade/veic/regiao)=1.0/1.15/1.0 prorata=128.74 (16/30d)
+veiculo_ano=2016 (idade 10)            200  premio=241.38 plano=completo mult(idade/veic/regiao)=1.0/1.15/1.0 prorata=128.74 (16/30d)
+veiculo_ano=2015 (idade 11)            200  premio=304.36 plano=completo mult(idade/veic/regiao)=1.0/1.45/1.0 prorata=162.33 (16/30d)
+veiculo_ano=2006 (idade 20)            200  premio=304.36 plano=completo mult(idade/veic/regiao)=1.0/1.45/1.0 prorata=162.33 (16/30d)
+veiculo_ano=2005 (idade 21)            422  {"error": "cotacao_recusada", "motivo": "Veiculo com mais de 20 anos nao e aceito."}
+veiculo_ano=1949                       422  [pydantic] ['body', 'veiculo_ano'] Input should be greater than or equal to 1950
+--- cep (alto risco: 07 08 21 26 59 -> x1.30)
+cep='07000-000'                        200  premio=272.87 plano=completo mult(idade/veic/regiao)=1.0/1.0/1.3 prorata=145.53 (16/30d)
+cep='07000000'                         200  premio=272.87 plano=completo mult(idade/veic/regiao)=1.0/1.0/1.3 prorata=145.53 (16/30d)
+cep='08.000-000'                       200  premio=272.87 plano=completo mult(idade/veic/regiao)=1.0/1.0/1.3 prorata=145.53 (16/30d)
+cep=' 08000-000'                       200  premio=272.87 plano=completo mult(idade/veic/regiao)=1.0/1.0/1.3 prorata=145.53 (16/30d)
+cep='8000000'                          200  premio=209.9 plano=completo mult(idade/veic/regiao)=1.0/1.0/1.0 prorata=111.95 (16/30d)
+cep='00000-000'                        200  premio=209.9 plano=completo mult(idade/veic/regiao)=1.0/1.0/1.0 prorata=111.95 (16/30d)
+cep='99999-999'                        200  premio=209.9 plano=completo mult(idade/veic/regiao)=1.0/1.0/1.0 prorata=111.95 (16/30d)
+cep='abc'                              200  premio=209.9 plano=completo mult(idade/veic/regiao)=1.0/1.0/1.0 prorata=111.95 (16/30d)
+cep=''                                 200  premio=209.9 plano=completo mult(idade/veic/regiao)=1.0/1.0/1.0 prorata=111.95 (16/30d)
+cep='0'                                200  premio=209.9 plano=completo mult(idade/veic/regiao)=1.0/1.0/1.0 prorata=111.95 (16/30d)
+cep=7000000 (int)                      422  [pydantic] ['body', 'cep'] Input should be a valid string
+cep omitido                            200  premio=209.9 plano=completo mult(idade/veic/regiao)=1.0/1.0/1.0 prorata=111.95 (16/30d)
+cep=null                               200  premio=209.9 plano=completo mult(idade/veic/regiao)=1.0/1.0/1.0 prorata=111.95 (16/30d)
+--- plano_id
+plano_id='COMPLETO'                    200  premio=209.9 plano=completo mult(idade/veic/regiao)=1.0/1.0/1.0 prorata=111.95 (16/30d)
+plano_id='completo '                   422  {"error": "cotacao_recusada", "motivo": "Plano 'completo ' inexistente. Opcoes: essencial, completo, premium"}
+plano_id='gold'                        422  {"error": "cotacao_recusada", "motivo": "Plano 'gold' inexistente. Opcoes: essencial, completo, premium"}
+plano_id=''                            200  premio=119.9 plano=essencial mult(idade/veic/regiao)=1.0/1.0/1.0 prorata=63.95 (16/30d)
+plano_id omitido                       200  premio=119.9 plano=essencial mult(idade/veic/regiao)=1.0/1.0/1.0 prorata=63.95 (16/30d)
+plano_id=null                          422  [pydantic] ['body', 'plano_id'] Input should be a valid string
+--- data_inicio (pro-rata se dia != 1)
+data_inicio: dia 1 do mes que vem      200  premio=209.9 plano=completo mult(idade/veic/regiao)=1.0/1.0/1.0
+data_inicio: dia 15 do mes que vem     200  premio=209.9 plano=completo mult(idade/veic/regiao)=1.0/1.0/1.0 prorata=111.95 (16/30d)
+data_inicio: ultimo dia do mes que vem 200  premio=209.9 plano=completo mult(idade/veic/regiao)=1.0/1.0/1.0 prorata=7.0 (1/30d)
+data_inicio: 90 dias NO PASSADO        200  premio=209.9 plano=completo mult(idade/veic/regiao)=1.0/1.0/1.0 prorata=67.71 (10/31d)
+data_inicio: 3 anos no futuro          200  premio=209.9 plano=completo mult(idade/veic/regiao)=1.0/1.0/1.0 prorata=88.02 (13/31d)
+data_inicio: 30/fev (inexistente)      400  {"error": "payload_invalido", "detalhe": "day is out of range for month"}
+data_inicio: formato dd/mm/aaaa        400  {"error": "payload_invalido", "detalhe": "Invalid isoformat string: '15/07/2026'"}
+data_inicio: formato compacto aaaammdd 200  premio=209.9 plano=completo mult(idade/veic/regiao)=1.0/1.0/1.0 prorata=111.95 (16/30d)
+data_inicio: string vazia              200  premio=209.9 plano=completo mult(idade/veic/regiao)=1.0/1.0/1.0
+data_inicio: texto livre               400  {"error": "payload_invalido", "detalhe": "Invalid isoformat string: 'ontem'"}
+data_inicio=null                       200  premio=209.9 plano=completo mult(idade/veic/regiao)=1.0/1.0/1.0
+data_inicio omitida                    200  premio=209.9 plano=completo mult(idade/veic/regiao)=1.0/1.0/1.0
+--- payload / extras
+campo extra desconhecido (ignorado?)   200  premio=209.9 plano=completo mult(idade/veic/regiao)=1.0/1.0/1.0 prorata=111.95 (16/30d)
+JSON malformado                         422 [pydantic] ['body', 1] JSON decode error
+corpo vazio                             422 [pydantic] ['body'] Field required
+--- campos da resposta 200:
+{
+ "plano_id": "completo",
+ "plano_nome": "Completo",
+ "premio_mensal": 209.9,
+ "franquia": 3000,
+ "coberturas": [
+  "colisao",
+  "roubo",
+  "furto",
+  "terceiros",
+  "vidros"
+ ],
+ "multiplicadores": {
+  "faixa_etaria": 1.0,
+  "idade_veiculo": 1.0,
+  "regiao": 1.0
+ },
+ "carencia": {
+  "coberturas": [
+   "roubo",
+   "furto"
+  ],
+  "dias": 30,
+  "observacao": "Coberturas de roubo e furto so passam a valer apos a carencia, contada da data de inicio da vigencia."
+ },
+ "moeda": "BRL",
+ "primeiro_pagamento_pro_rata": {
+  "dias_no_mes": 30,
+  "dias_cobrados": 16,
+  "valor_primeiro_pagamento": 111.95
+ }
+}

@@ -1,0 +1,150 @@
+{
+  "assumptions": {
+    "prices_usd_per_mtok": {
+      "haiku-5-5": {
+        "inp": 0.1,
+        "out": 0.5,
+        "read": 0.1
+      },
+      "sonnet-5-5": {
+        "inp": 2.0,
+        "out": 10.0,
+        "read": 0.1
+      },
+      "opus-5-5": {
+        "inp": 4.0,
+        "out": 20.0,
+        "read": 0.05
+      }
+    },
+    "tokens_per_call": {
+      "static_prefix": 1500,
+      "state": 150,
+      "history": 250,
+      "message": 40,
+      "output": 110
+    },
+    "calls_per_conversation": {
+      "com fast-path (5 chamadas)": 5,
+      "sem fast-path (8 chamadas)": 8,
+      "conversa dificil (12 chamadas)": 12
+    },
+    "escalation_rate": 0.1,
+    "write_5m_mult": 1.25,
+    "write_1h_mult": 2.0,
+    "thinking_extra_out_sensitivity": 250
+  },
+  "cache_break_even_hit_rate": 0.217,
+  "tokens": {
+    "com fast-path (5 chamadas)": {
+      "hit_95": {
+        "input_total": 9700,
+        "input_from_cache": 7125,
+        "output_total": 550
+      },
+      "hit_0": {
+        "input_total": 9700,
+        "input_from_cache": 0,
+        "output_total": 550
+      }
+    },
+    "sem fast-path (8 chamadas)": {
+      "hit_95": {
+        "input_total": 15520,
+        "input_from_cache": 11400,
+        "output_total": 880
+      },
+      "hit_0": {
+        "input_total": 15520,
+        "input_from_cache": 0,
+        "output_total": 880
+      }
+    },
+    "conversa dificil (12 chamadas)": {
+      "hit_95": {
+        "input_total": 23280,
+        "input_from_cache": 17100,
+        "output_total": 1320
+      },
+      "hit_0": {
+        "input_total": 23280,
+        "input_from_cache": 0,
+        "output_total": 1320
+      }
+    }
+  },
+  "usd_per_conversation": {
+    "haiku | com fast-path (5 chamadas) | sem cache | sem thinking": 0.00125,
+    "haiku | com fast-path (5 chamadas) | sem cache | thinking residual": 0.00187,
+    "haiku | com fast-path (5 chamadas) | cache, hit 95% (trafego continuo) | sem thinking": 0.00061,
+    "haiku | com fast-path (5 chamadas) | cache, hit 95% (trafego continuo) | thinking residual": 0.00124,
+    "haiku | com fast-path (5 chamadas) | cache, hit 0% (trafego raro: so paga a escrita) | sem thinking": 0.00143,
+    "haiku | com fast-path (5 chamadas) | cache, hit 0% (trafego raro: so paga a escrita) | thinking residual": 0.00206,
+    "haiku | sem fast-path (8 chamadas) | sem cache | sem thinking": 0.00199,
+    "haiku | sem fast-path (8 chamadas) | sem cache | thinking residual": 0.00299,
+    "haiku | sem fast-path (8 chamadas) | cache, hit 95% (trafego continuo) | sem thinking": 0.00098,
+    "haiku | sem fast-path (8 chamadas) | cache, hit 95% (trafego continuo) | thinking residual": 0.00198,
+    "haiku | sem fast-path (8 chamadas) | cache, hit 0% (trafego raro: so paga a escrita) | sem thinking": 0.00229,
+    "haiku | sem fast-path (8 chamadas) | cache, hit 0% (trafego raro: so paga a escrita) | thinking residual": 0.00329,
+    "haiku | conversa dificil (12 chamadas) | sem cache | sem thinking": 0.00299,
+    "haiku | conversa dificil (12 chamadas) | sem cache | thinking residual": 0.00449,
+    "haiku | conversa dificil (12 chamadas) | cache, hit 95% (trafego continuo) | sem thinking": 0.00147,
+    "haiku | conversa dificil (12 chamadas) | cache, hit 95% (trafego continuo) | thinking residual": 0.00297,
+    "haiku | conversa dificil (12 chamadas) | cache, hit 0% (trafego raro: so paga a escrita) | sem thinking": 0.00344,
+    "haiku | conversa dificil (12 chamadas) | cache, hit 0% (trafego raro: so paga a escrita) | thinking residual": 0.00494,
+    "haiku+sonnet | com fast-path (5 chamadas) | sem cache | sem thinking": 0.00374,
+    "haiku+sonnet | com fast-path (5 chamadas) | sem cache | thinking residual": 0.00561,
+    "haiku+sonnet | com fast-path (5 chamadas) | cache, hit 95% (trafego continuo) | sem thinking": 0.0031,
+    "haiku+sonnet | com fast-path (5 chamadas) | cache, hit 95% (trafego continuo) | thinking residual": 0.00498,
+    "haiku+sonnet | com fast-path (5 chamadas) | cache, hit 0% (trafego raro: so paga a escrita) | sem thinking": 0.00392,
+    "haiku+sonnet | com fast-path (5 chamadas) | cache, hit 0% (trafego raro: so paga a escrita) | thinking residual": 0.0058,
+    "haiku+sonnet | sem fast-path (8 chamadas) | sem cache | sem thinking": 0.00598,
+    "haiku+sonnet | sem fast-path (8 chamadas) | sem cache | thinking residual": 0.00898,
+    "haiku+sonnet | sem fast-path (8 chamadas) | cache, hit 95% (trafego continuo) | sem thinking": 0.00497,
+    "haiku+sonnet | sem fast-path (8 chamadas) | cache, hit 95% (trafego continuo) | thinking residual": 0.00796,
+    "haiku+sonnet | sem fast-path (8 chamadas) | cache, hit 0% (trafego raro: so paga a escrita) | sem thinking": 0.00628,
+    "haiku+sonnet | sem fast-path (8 chamadas) | cache, hit 0% (trafego raro: so paga a escrita) | thinking residual": 0.00928,
+    "haiku+sonnet | conversa dificil (12 chamadas) | sem cache | sem thinking": 0.00896,
+    "haiku+sonnet | conversa dificil (12 chamadas) | sem cache | thinking residual": 0.01346,
+    "haiku+sonnet | conversa dificil (12 chamadas) | cache, hit 95% (trafego continuo) | sem thinking": 0.00745,
+    "haiku+sonnet | conversa dificil (12 chamadas) | cache, hit 95% (trafego continuo) | thinking residual": 0.01195,
+    "haiku+sonnet | conversa dificil (12 chamadas) | cache, hit 0% (trafego raro: so paga a escrita) | sem thinking": 0.00941,
+    "haiku+sonnet | conversa dificil (12 chamadas) | cache, hit 0% (trafego raro: so paga a escrita) | thinking residual": 0.01391,
+    "sonnet | com fast-path (5 chamadas) | sem cache | sem thinking": 0.0249,
+    "sonnet | com fast-path (5 chamadas) | sem cache | thinking residual": 0.0374,
+    "sonnet | com fast-path (5 chamadas) | cache, hit 95% (trafego continuo) | sem thinking": 0.01226,
+    "sonnet | com fast-path (5 chamadas) | cache, hit 95% (trafego continuo) | thinking residual": 0.02476,
+    "sonnet | com fast-path (5 chamadas) | cache, hit 0% (trafego raro: so paga a escrita) | sem thinking": 0.02865,
+    "sonnet | com fast-path (5 chamadas) | cache, hit 0% (trafego raro: so paga a escrita) | thinking residual": 0.04115,
+    "sonnet | sem fast-path (8 chamadas) | sem cache | sem thinking": 0.03984,
+    "sonnet | sem fast-path (8 chamadas) | sem cache | thinking residual": 0.05984,
+    "sonnet | sem fast-path (8 chamadas) | cache, hit 95% (trafego continuo) | sem thinking": 0.01962,
+    "sonnet | sem fast-path (8 chamadas) | cache, hit 95% (trafego continuo) | thinking residual": 0.03962,
+    "sonnet | sem fast-path (8 chamadas) | cache, hit 0% (trafego raro: so paga a escrita) | sem thinking": 0.04584,
+    "sonnet | sem fast-path (8 chamadas) | cache, hit 0% (trafego raro: so paga a escrita) | thinking residual": 0.06584,
+    "sonnet | conversa dificil (12 chamadas) | sem cache | sem thinking": 0.05976,
+    "sonnet | conversa dificil (12 chamadas) | sem cache | thinking residual": 0.08976,
+    "sonnet | conversa dificil (12 chamadas) | cache, hit 95% (trafego continuo) | sem thinking": 0.02943,
+    "sonnet | conversa dificil (12 chamadas) | cache, hit 95% (trafego continuo) | thinking residual": 0.05943,
+    "sonnet | conversa dificil (12 chamadas) | cache, hit 0% (trafego raro: so paga a escrita) | sem thinking": 0.06876,
+    "sonnet | conversa dificil (12 chamadas) | cache, hit 0% (trafego raro: so paga a escrita) | thinking residual": 0.09876,
+    "opus | com fast-path (5 chamadas) | sem cache | sem thinking": 0.0498,
+    "opus | com fast-path (5 chamadas) | sem cache | thinking residual": 0.0748,
+    "opus | com fast-path (5 chamadas) | cache, hit 95% (trafego continuo) | sem thinking": 0.0231,
+    "opus | com fast-path (5 chamadas) | cache, hit 95% (trafego continuo) | thinking residual": 0.0481,
+    "opus | com fast-path (5 chamadas) | cache, hit 0% (trafego raro: so paga a escrita) | sem thinking": 0.0573,
+    "opus | com fast-path (5 chamadas) | cache, hit 0% (trafego raro: so paga a escrita) | thinking residual": 0.0823,
+    "opus | sem fast-path (8 chamadas) | sem cache | sem thinking": 0.07968,
+    "opus | sem fast-path (8 chamadas) | sem cache | thinking residual": 0.11968,
+    "opus | sem fast-path (8 chamadas) | cache, hit 95% (trafego continuo) | sem thinking": 0.03696,
+    "opus | sem fast-path (8 chamadas) | cache, hit 95% (trafego continuo) | thinking residual": 0.07696,
+    "opus | sem fast-path (8 chamadas) | cache, hit 0% (trafego raro: so paga a escrita) | sem thinking": 0.09168,
+    "opus | sem fast-path (8 chamadas) | cache, hit 0% (trafego raro: so paga a escrita) | thinking residual": 0.13168,
+    "opus | conversa dificil (12 chamadas) | sem cache | sem thinking": 0.11952,
+    "opus | conversa dificil (12 chamadas) | sem cache | thinking residual": 0.17952,
+    "opus | conversa dificil (12 chamadas) | cache, hit 95% (trafego continuo) | sem thinking": 0.05544,
+    "opus | conversa dificil (12 chamadas) | cache, hit 95% (trafego continuo) | thinking residual": 0.11544,
+    "opus | conversa dificil (12 chamadas) | cache, hit 0% (trafego raro: so paga a escrita) | sem thinking": 0.13752,
+    "opus | conversa dificil (12 chamadas) | cache, hit 0% (trafego raro: so paga a escrita) | thinking residual": 0.19752
+  }
+}

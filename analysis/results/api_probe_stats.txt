@@ -1,0 +1,5 @@
+400 chamadas, 30 em paralelo, 16.2s no total
+status: {200: 323, 500: 31, 502: 21, 503: 25}
+200 rapidos: 283 (max 0.11s) | 200 lentos: 40 (min 8.00s)
+latencia dos 5xx: max 0.11s
+P(5xx)=0.193  P(lento)=0.100

@@ -1,0 +1,187 @@
+{
+  "structure": {
+    "rows": 26470,
+    "conversations": 2500,
+    "columns": [
+      "conversation_id",
+      "message_index",
+      "timestamp",
+      "sender_role",
+      "sender_name",
+      "message_type",
+      "message_body",
+      "channel",
+      "conversation_outcome",
+      "lead_idade_informada",
+      "veiculo_texto"
+    ],
+    "null_cells": 0,
+    "channels": [
+      "whatsapp"
+    ],
+    "message_type": {
+      "text": 24681,
+      "document": 774,
+      "image": 550,
+      "audio": 465
+    },
+    "msgs_per_conversation": {
+      "min": 8,
+      "median": 11.0,
+      "max": 14
+    },
+    "outcome_pct": {
+      "em_negociacao": 30.3,
+      "ganho": 28.5,
+      "perdido": 21.5,
+      "sem_resposta": 19.7
+    }
+  },
+  "ordering": {
+    "duplicate_conversation_message_index": 0,
+    "conversations_with_time_regression": 2495,
+    "conversations_with_time_regression_pct": 99.8,
+    "messages_with_negative_delta": 7904,
+    "timestamp_min": "2026-01-01 08:49:00",
+    "timestamp_max": "2026-05-28 21:49:00",
+    "timezone_aware": false
+  },
+  "conversation_level_columns_replicated": {
+    "max_distinct_values_per_conversation": {
+      "conversation_outcome": 1,
+      "lead_idade_informada": 1,
+      "veiculo_texto": 1
+    },
+    "first_message_already_carries_labels": true
+  },
+  "vehicle_and_age": {
+    "ref_year": 2026,
+    "veiculo_texto_clean_format_share": 1.0,
+    "veiculo_ano": {
+      "min": 2001.0,
+      "max": 2024.0
+    },
+    "idade": {
+      "min": 18,
+      "max": 82
+    },
+    "age_refused_pct": 11.2,
+    "vehicle_refused_pct": 21.2,
+    "ineligible_pct": 30.0,
+    "ineligible_conversations": 751,
+    "ineligible_by_outcome": {
+      "em_negociacao": 250,
+      "ganho": 203,
+      "perdido": 151,
+      "sem_resposta": 147
+    },
+    "near_edge_conversations": 283,
+    "high_risk_cep_pct": 35.8
+  },
+  "pii": {
+    "cpf_punctuated": {
+      "messages": 2500,
+      "conversations": 2500,
+      "conversation_share_pct": 100.0
+    },
+    "cpf_11_digits": {
+      "messages": 0,
+      "conversations": 0,
+      "conversation_share_pct": 0.0
+    },
+    "email": {
+      "messages": 1379,
+      "conversations": 1379,
+      "conversation_share_pct": 55.2
+    },
+    "phone_plus55": {
+      "messages": 1379,
+      "conversations": 1379,
+      "conversation_share_pct": 55.2
+    },
+    "plate_mercosul": {
+      "messages": 839,
+      "conversations": 839,
+      "conversation_share_pct": 33.6
+    },
+    "cep_labelled": {
+      "messages": 2500,
+      "conversations": 2500,
+      "conversation_share_pct": 100.0
+    },
+    "cpf_label_spelling_in_lead_msgs": {
+      "cpf": 1682,
+      "Cpf": 818
+    },
+    "unlabelled_cep_regex_false_hits_on_phones": 1379,
+    "distinct_lead_names": 336,
+    "vendor_msgs_greeting_by_first_name": 2500,
+    "conversations_with_media_pct": 56.8
+  },
+  "vendor_price_vs_api": {
+    "vendor_quoted_conversations": 2500,
+    "distinct_vendor_prices": 8,
+    "distinct_coverage_claims": 1,
+    "vendor_price_mean_by_plan": {
+      "completo": 248.8,
+      "essencial": 254.7,
+      "premium": 252.6
+    },
+    "eligible_conversations_compared": 1749,
+    "vendor_over_api_ratio": {
+      "min": 0.13,
+      "median": 0.69,
+      "max": 3.25
+    },
+    "vendor_within_5pct_of_api_share": 0.037,
+    "rank_corr_vendor_vs_api_price": 0.0,
+    "rank_corr_vendor_price_vs_age": -0.016
+  },
+  "outcome_signal": {
+    "overall_win_rate": 0.285,
+    "win_rate_by_plan": {
+      "completo": 0.276,
+      "essencial": 0.288,
+      "premium": 0.29
+    },
+    "win_rate_by_ineligible": {
+      "False": 0.291,
+      "True": 0.27
+    },
+    "win_rate_by_high_risk_cep": {
+      "False": 0.292,
+      "True": 0.272
+    },
+    "win_rate_by_price_band": {
+      "(0, 160]": 0.268,
+      "(160, 260]": 0.291,
+      "(260, 400]": 0.289
+    },
+    "win_rate_by_age_band": {
+      "(17, 29]": 0.294,
+      "(29, 59]": 0.277,
+      "(59, 75]": 0.296,
+      "(75, 90]": 0.275
+    },
+    "ineligible_but_won": 203
+  },
+  "diversity_and_missing_scenarios": {
+    "lead_messages": 16470,
+    "distinct_lead_texts_digits_normalised": 2277,
+    "top10_texts_share_of_lead_msgs_pct": 40.7,
+    "scenario_keyword_hits": {
+      "human_request": 0,
+      "claim": 0,
+      "complaint": 0,
+      "cancellation": 0,
+      "grace_period": 0,
+      "system_error": 0,
+      "deductible_mention": 983
+    },
+    "media_messages_by_type": {
+      "document": 774,
+      "image": 550,
+      "audio": 465
+    }
+  }
+}
