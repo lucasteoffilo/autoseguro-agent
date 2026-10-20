@@ -18,16 +18,21 @@ from __future__ import annotations
 import argparse
 import json
 import random
+import sys
 from pathlib import Path
 
-DEADLINE = 15.0   # orcamento por cotacao (s)
-HOLD_AT = 2.5     # mensagem "um instante" se ainda sem resposta (s)
-MAX_CALLS = 4
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))  # sob `python -I` nada alem do site-packages entra no path
+from autoseguro import budgets  # noqa: E402  fonte unica dos numeros: produto, simulador e testes
+
+DEADLINE = budgets.QUOTE_BUDGET_S      # orcamento por cotacao (s)
+HOLD_AT = budgets.HOLD_AFTER_S         # mensagem "um instante" se ainda sem resposta (s)
+MAX_CALLS = budgets.QUOTE_MAX_CALLS
+BACKOFF_BASE = budgets.QUOTE_BACKOFF_BASE_S
 
 POLICIES = {
     "A": {"label": "A) timeout 2s + retry", "timeout": 2.0, "hedge": None},
-    "B": {"label": "B) timeout 10s, retry so em 5xx (adotada)", "timeout": 10.0, "hedge": None},
-    "C": {"label": "C) hedge aos 2s (descartada)", "timeout": 10.0, "hedge": 2.0},
+    "B": {"label": "B) timeout 10s, retry so em 5xx (adotada)", "timeout": budgets.QUOTE_ATTEMPT_TIMEOUT_S, "hedge": None},
+    "C": {"label": "C) hedge aos 2s (descartada)", "timeout": budgets.QUOTE_ATTEMPT_TIMEOUT_S, "hedge": 2.0},
 }
 SCENARIOS = {
     "nominal": {"label": "Nominal (5xx 20% / lenta 10%)", "fail": 0.20, "slow": 0.10},
@@ -88,7 +93,7 @@ def one_quote(rng: random.Random, fail: float, slow: float, timeout: float, max_
                 return t, t, n_calls, max_inflight
             failures += 1
             if not inflight and retry_at is None and n_calls < max_calls:
-                retry_at = t + 0.3 * 2 ** (failures - 1) * rng.uniform(0.5, 1.0)
+                retry_at = t + BACKOFF_BASE * 2 ** (failures - 1) * rng.uniform(0.5, 1.0)
         elif kind == "retry":
             retry_at = None
             launch(t)

@@ -29,11 +29,11 @@ WRITE_5M, WRITE_1H = 1.25, 2.0   # multiplicadores sobre o preco de entrada
 TOK_SLOTS_ONLY = {"static_prefix": 1500,  # ANTES: sistema + schema + regras + few-shots
                   "state": 150, "history": 250, "message": 40,
                   "output": 110}          # {slots, intent}
-TOK = {"static_prefix": 2000,  # DEPOIS: + persona e tom, fatos do /planos, regras do guardrail, few-shots com resposta
+TOK = {"static_prefix": 2200,  # DEPOIS: + persona e tom, base de fatos do /planos (~250), regras do guardrail, few-shots com resposta
        "state": 150,           # slots ja coletados (JSON)
        "history": 250,         # janela das ultimas ~6 mensagens, mascaradas
        "message": 40,          # mensagem atual
-       "output": 190}          # 110 de {slots, intent} + ~80 de reply
+       "output": 128}          # ~55 de estrutura+slots em LISTA compacta + ~8 de facts_used + ~65 de reply (<= 40 palavras)
 CALLS = {"com fast-path (5 chamadas)": 5, "sem fast-path (8 chamadas)": 8, "conversa dificil (12 chamadas)": 12}
 ESCALATION_RATE = 0.10
 THINKING_EXTRA_OUT = 250       # sensibilidade: raciocinio residual cobrado como saida
@@ -96,6 +96,8 @@ def run_all() -> dict:
             after = n8 * strategy_call_usd(strat, cache, hit, 0, TOK)
             out["before_after_reply_in_llm"][f"{strat} | {mname}"] = {
                 "before_usd": round(before, 5), "after_usd": round(after, 5), "delta_pct": round((after / before - 1) * 100, 1)}
+    verbose = {**TOK, "output": 183}  # sensibilidade: se os slots saissem verbosos (5 campos sempre presentes) em vez de lista compacta
+    out["sensitivity_verbose_slots_haiku_8_calls_no_cache_usd"] = round(n8 * strategy_call_usd("haiku", False, 0.0, 0, verbose), 5)
     return out
 
 
@@ -122,6 +124,8 @@ def to_markdown(r: dict) -> str:
     for k, v in r["before_after_reply_in_llm"].items():
         L.append(f"| {k} | ${v['before_usd']:.4f} | ${v['after_usd']:.4f} | +{v['delta_pct']}% |")
     t = lambda s: u[f"{s} | sem fast-path (8 chamadas) | sem cache | thinking residual"]  # noqa: E731
+    L += ["", f"Sensibilidade a saida verbosa (183 tokens em vez de 128; Haiku, 8 chamadas, sem cache): "
+          f"${u['haiku | sem fast-path (8 chamadas) | sem cache | sem thinking']:.4f} -> ${r['sensitivity_verbose_slots_haiku_8_calls_no_cache_usd']:.4f}."]
     L += ["", f"Sensibilidade (conversa de 8 chamadas, sem cache): thinking residual de {THINKING_EXTRA_OUT} tokens/chamada leva o Haiku 5.5 de "
           f"${u['haiku | sem fast-path (8 chamadas) | sem cache | sem thinking']:.4f} para ${t('haiku'):.4f} e o Sonnet 5.5 de "
           f"${u['sonnet | sem fast-path (8 chamadas) | sem cache | sem thinking']:.4f} para ${t('sonnet'):.4f}."]

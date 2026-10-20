@@ -1,40 +1,47 @@
-> Latencia do LLM = HIPOTESE (TTFT + 190 tokens de saida / velocidade), nao medicao. /quote = modelo medido (politica B). Fast-path estrito cobre 30% dos turnos.
+> Latencia do LLM = HIPOTESE (TTFT + 128 tokens de saida / velocidade; cenario 'reply_40_slots_compactos'), nao medicao. /quote = modelo medido (politica B). Fast-path cobre 0% dos turnos (desligado por padrao).
 
 **Nominal (5xx 20% / lenta 10%)** (so a /quote, sem LLM: p50 0.29s, p95 8.14s, p99 8.51s)
 
-| Perfil LLM (p50/p95 de uma chamada) | Turno sem cotacao p95 | Turno com cotacao p50 | p95 | p99 | 'um instante' | Handoff | Mensagem qualquer: p95 | Cotacao com LLM fora do caminho critico: p95 |
-|---|---|---|---|---|---|---|---|---|
-| rapido (1.11s/2.77s) | 2.87s | 1.58s | 9.5s | 10.68s | 23.7% | 0.15% | 3.22s | 8.14s |
-| medio (2.71s/6.78s) | 8.58s | 3.35s | 11.69s | 14.09s | 70.1% | 0.75% | 9.15s | 8.14s |
-| lento (5.32s/13.3s) | 12.4s | 6.31s | 13.04s | 19.08s | 95.1% | 17.71% | 12.4s | 8.14s |
+| Perfil LLM (p50/p95 de uma chamada) | Turno sem cotacao p95 | Turno com cotacao p50 | p95 | p99 | 'um instante' | Handoff | Mensagem qualquer: p95 |
+|---|---|---|---|---|---|---|---|
+| rapido (0.86s/2.15s) | 2.25s | 1.3s | 9.21s | 10.17s | 17.8% | 0.15% | 2.76s |
+| medio (2.02s/5.06s) | 5.15s | 2.6s | 10.61s | 12.59s | 52.6% | 0.2% | 7.15s |
+| lento (3.91s/9.77s) | 12.37s | 4.67s | 12.55s | 18.07s | 87.1% | 5.25% | 12.4s |
 
 **Degradado (5xx 50% / lenta 20%)** (so a /quote, sem LLM: p50 1.22s, p95 9.03s, p99 10.12s)
 
-| Perfil LLM (p50/p95 de uma chamada) | Turno sem cotacao p95 | Turno com cotacao p50 | p95 | p99 | 'um instante' | Handoff | Mensagem qualquer: p95 | Cotacao com LLM fora do caminho critico: p95 |
-|---|---|---|---|---|---|---|---|---|
-| rapido (1.11s/2.77s) | 2.87s | 2.9s | 10.79s | 12.0s | 55.4% | 6.29% | 9.27s | 9.03s |
-| medio (2.71s/6.78s) | 8.58s | 5.24s | 13.53s | 17.8s | 84.3% | 7.03% | 11.06s | 9.03s |
-| lento (5.32s/13.3s) | 12.4s | 11.21s | 18.47s | 20.0s | 97.7% | 24.0% | 12.4s | 9.03s |
+| Perfil LLM (p50/p95 de uma chamada) | Turno sem cotacao p95 | Turno com cotacao p50 | p95 | p99 | 'um instante' | Handoff | Mensagem qualquer: p95 |
+|---|---|---|---|---|---|---|---|
+| rapido (0.86s/2.15s) | 2.25s | 2.56s | 10.38s | 11.4s | 50.7% | 6.29% | 9.02s |
+| medio (2.02s/5.06s) | 5.15s | 4.2s | 12.38s | 15.03s | 74.0% | 6.36% | 10.16s |
+| lento (3.91s/9.77s) | 12.37s | 8.66s | 16.92s | 19.69s | 93.5% | 11.57% | 12.4s |
 
-**Impacto de o LLM redigir a resposta na mesma chamada (110 -> 190 tokens de saida), cenario nominal**
+**O reply curto resolve o perfil medio? p95 do turno, nominal (criterio: 5s sem cotacao, 12s com)**
 
-| Perfil | LLM p50 (antes -> depois) | Turno sem cotacao p95 | Turno com cotacao p95 | Mensagem qualquer p95 | 'Um instante' (mensagem qualquer) |
-|---|---|---|---|---|---|
-| rapido | 0.79s -> 1.11s | 2.08s -> 2.87s | 9.13s -> 9.49s | 2.4s -> 3.24s | 4.6% -> 9.1% |
-| medio | 1.82s -> 2.71s | 4.66s -> 8.54s | 10.34s -> 11.67s | 5.15s -> 9.21s | 24.9% -> 43.3% |
-| lento | 3.5s -> 5.32s | 11.09s -> 12.4s | 12.4s -> 13.03s | 11.2s -> 12.4s | 54.1% -> 65.0% |
+| Cenario de saida | Tokens | rapido: sem / com cotacao | medio: sem / com cotacao | lento: sem / com cotacao |
+|---|---|---|---|---|
+| so_slots_verboso | 110 | 2.08s ok / 9.13s ok | 4.66s ok / 10.34s ok | 11.09s FALHA / 12.4s FALHA |
+| reply_sem_teto | 190 | 2.87s ok / 9.49s ok | 8.54s FALHA / 11.67s ok | 12.4s FALHA / 13.03s FALHA |
+| reply_40_palavras | 183 | 2.8s ok / 9.46s ok | 8.27s FALHA / 11.53s ok | 12.4s FALHA / 13.02s FALHA |
+| reply_40_slots_compactos | 128 | 2.25s ok / 9.21s ok | 5.16s FALHA / 10.61s ok | 12.33s FALHA / 12.56s FALHA |
 
-**Sensibilidade a cobertura do fast-path (p95 de uma mensagem qualquer, nominal, 190 tokens)**
+**Limite por chamada DERIVADO do criterio do turno** (p95 da chamada = 2.5 x p50; cenario nominal da /quote)
+
+- turno sem cotacao (p95 <= 5s): chamada com p50 <= 1.96s, p95 <= 4.91s
+- turno com cotacao (p95 <= 12s): chamada com p50 <= 2.9s, p95 <= 7.24s
+- **restricao ativa: no_quote_turn; p95 por chamada <= 4.91s**
+
+**Sensibilidade a cobertura do fast-path (p95 de uma mensagem qualquer, nominal)**
 
 | Perfil | 0% | 30% | 40% |
 |---|---|---|---|
-| rapido | 3.46s | 3.24s | 3.1s |
-| medio | 9.68s | 9.21s | 8.94s |
-| lento | 12.4s | 12.4s | 12.4s |
+| rapido | 2.74s | 2.58s | 2.47s |
+| medio | 7.08s | 5.7s | 5.45s |
+| lento | 12.4s | 12.17s | 11.83s |
 
 **Varredura do p50 do LLM (p95 = 2,5x p50), cenario nominal**
 
-| LLM p50 | LLM p95 | Turno sem cotacao p95 | C2 (<= 5s) | Turno com cotacao p95 | C3 (<= 12s) |
+| LLM p50 | LLM p95 | Turno sem cotacao p95 | <= 5s | Turno com cotacao p95 | <= 12s |
 |---|---|---|---|---|---|
 | 0.5s | 1.25s | 1.35s | ok | 8.79s | ok |
 | 1.0s | 2.5s | 2.6s | ok | 9.37s | ok |
