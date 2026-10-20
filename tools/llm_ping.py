@@ -3,7 +3,7 @@
     make llm-ping
 
 Confere, com uma unica chamada real e uma mensagem escrita a mao (sem PII):
-  1. a autenticacao (a chave esta setada e o provedor a aceitou);
+  1. que a autenticacao nao foi rejeitada (sem 401/403). Isso NAO prova que a chave vale: so um 200 prova; um 404, por exemplo, nao diz nada;
   2. que o provedor ACEITA O PEDIDO COMO MONTADO (json_schema, require_parameters, raciocinio), que e o que mais pode dar errado;
   3. que o modelo devolve saida valida no schema LOCAL (o provedor nao e confiado para o formato);
   4. a latencia desta amostra. E UMA amostra: nao e p95, e a 1a chamada pode incluir partida a frio.
@@ -119,7 +119,7 @@ def main(argv: list[str] | None = None) -> int:
     served = f" (servido por {res.served_model})" if res.served_model and res.served_model != cfg.model else ""
 
     print(f"\n=== llm-ping | {cfg.provider} | {cfg.model}{served}")
-    print(f"  [{_mark(auth)}] autenticacao aceita" + (f" (HTTP {res.http_status})" if answered else " (sem resposta HTTP)"))
+    print(f"  [{_mark(auth)}] autenticacao nao rejeitada (sem 401/403)" + (f", resposta HTTP {res.http_status}" if answered else ", sem resposta HTTP"))
     print(f"  [{_mark(accepted)}] pedido aceito como montado ({describe_request(cfg)})")
     print(f"  [{_mark(valid)}] saida valida no schema local")
     limit = smoke_llm._derived_limit()

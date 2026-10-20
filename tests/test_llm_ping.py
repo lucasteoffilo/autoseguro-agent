@@ -38,7 +38,7 @@ def test_a_good_ping_sends_exactly_one_request_and_checks_the_four_things(tmp_pa
     assert ping(tmp_path, server) == 0
     assert len(server.requests) == 1, "UMA requisicao, e nenhuma consulta extra (nem GET /key)"
     out = capsys.readouterr().out
-    assert "[ok] autenticacao aceita (HTTP 200)" in out
+    assert "[ok] autenticacao nao rejeitada (sem 401/403), resposta HTTP 200" in out
     assert "[ok] pedido aceito como montado (json_schema + require_parameters, reasoning=none)" in out
     assert "[ok] saida valida no schema local" in out
     assert "latencia desta amostra" in out and "UMA amostra, nao um p95" in out
@@ -117,7 +117,7 @@ def test_a_401_explains_how_to_fix_the_key(tmp_path, server, capsys):
     server.reply(401, error_json(401, "No auth credentials found"))
     ping(tmp_path, server)
     captured = capsys.readouterr()
-    assert "[FALHA] autenticacao aceita (HTTP 401)" in captured.out and "Confira LLM_API_KEY" in captured.err
+    assert "[FALHA] autenticacao nao rejeitada (sem 401/403), resposta HTTP 401" in captured.out and "Confira LLM_API_KEY" in captured.err
 
 
 def test_a_404_blames_the_request_not_the_key_and_names_json_schema_and_require_parameters(tmp_path, server, capsys):
@@ -125,7 +125,7 @@ def test_a_404_blames_the_request_not_the_key_and_names_json_schema_and_require_
     server.reply(404, error_json(404, "No endpoints found that can handle the requested parameters"))
     assert ping(tmp_path, server) == 6
     captured = capsys.readouterr()
-    assert "[ok] autenticacao aceita (HTTP 404)" in captured.out, "404 nao e recusa de autenticacao"
+    assert "[ok] autenticacao nao rejeitada (sem 401/403), resposta HTTP 404" in captured.out, "404 nao e recusa de autenticacao (e tambem nao a prova)"
     assert "[FALHA] pedido aceito como montado (json_schema + require_parameters" in captured.out
     assert "json_schema + require_parameters" in captured.err and "LLM_STRUCTURED_OUTPUT=none" in captured.err
 
@@ -162,7 +162,7 @@ def test_a_timeout_is_reported_as_no_response(tmp_path, server, capsys):
     server.delay = 0.6
     assert ping(tmp_path, server, "--timeout", "0.2") == 7
     captured = capsys.readouterr()
-    assert "[?] autenticacao aceita (sem resposta HTTP)" in captured.out and "FALHA (timeout)" in captured.err
+    assert "[?] autenticacao nao rejeitada (sem 401/403), sem resposta HTTP" in captured.out and "FALHA (timeout)" in captured.err
     assert len(rows(tmp_path)) == 1, "a requisicao que estourou o prazo tambem conta"
 
 
@@ -176,7 +176,7 @@ def test_an_invalid_output_fails_the_ping_but_shows_auth_and_request_ok(tmp_path
     server.reply(200, chat_json("isto nao e JSON"))
     assert ping(tmp_path, server) == 1
     captured = capsys.readouterr()
-    assert "[ok] autenticacao aceita" in captured.out and "[ok] pedido aceito como montado" in captured.out
+    assert "[ok] autenticacao nao rejeitada" in captured.out and "[ok] pedido aceito como montado" in captured.out
     assert "[FALHA] saida valida no schema local" in captured.out
     assert "invalid_output" in captured.err and "nao impos o schema" in captured.err, "json_schema ligado: o modelo/provedor nao impos o schema"
 
