@@ -30,10 +30,12 @@ def _repo_files() -> list[Path]:
 
 @pytest.fixture(autouse=True)
 def _isolate_llm_credentials(monkeypatch):
-    """Nenhum teste enxerga credencial real: limpa as variaveis de LLM do ambiente de quem roda os testes."""
+    """Nenhum teste enxerga credencial real: limpa as variaveis de LLM do ambiente e impede que o smoke leia o .env de quem roda os testes."""
     for name in list(os.environ):
         if name.startswith("LLM_") or name in ("OPENROUTER_API_KEY", "ANTHROPIC_API_KEY"):
             monkeypatch.delenv(name, raising=False)
+    import tools.smoke_llm as smoke
+    monkeypatch.setattr(smoke, "load_env", lambda path: None)
 
 
 @pytest.fixture(scope="session")
