@@ -15,12 +15,13 @@ def e2e():
 
 
 def test_quote_turn_p95_is_dominated_by_the_quote_slow_mode_not_the_llm(e2e):
-    """Achado da Etapa 1: tirar o LLM do caminho critico devolve exatamente o p95 da /quote; com LLM rapido/medio so soma 1-2s."""
+    """Achado da Etapa 1: tirar o LLM do caminho critico devolve exatamente o p95 da /quote; o LLM soma por cima
+    ~1,4s (rapido) a ~3,5s (medio) com a resposta redigida na mesma chamada."""
     quote_only = e2e["quote_only"]["nominal"]["p95_s"]
-    for prof in ("rapido", "medio"):
+    for prof, margin in (("rapido", 3.0), ("medio", 4.5)):
         d = e2e["by_profile"]["nominal"][prof]
         assert d["quote_fast"]["p95_s"] == quote_only
-        assert quote_only < d["quote"]["p95_s"] < quote_only + 3
+        assert quote_only < d["quote"]["p95_s"] < quote_only + margin
 
 
 def test_acceptance_criteria_break_where_the_plan_says(e2e):
@@ -37,6 +38,38 @@ def test_slow_llm_profile_fails_acceptance_and_fast_passes(e2e):
     nominal = e2e["by_profile"]["nominal"]
     assert nominal["rapido"]["llm"]["p95_s"] <= e2e_latency_sim.C2_P95 and nominal["rapido"]["quote"]["p95_s"] <= e2e_latency_sim.C3_P95
     assert nominal["lento"]["llm"]["p95_s"] > e2e_latency_sim.C2_P95
+
+
+def test_reply_in_the_llm_call_pushes_the_medium_profile_out_of_c2(e2e):
+    """Impacto medido de 'o LLM redige a resposta na mesma chamada' (110 -> 190 tokens de saida)."""
+    ba = e2e["before_after_reply_in_llm"]
+    assert ba["medio"]["after_190_tokens"]["llm_turn_p95_s"] > e2e_latency_sim.C2_P95
+    assert ba["medio"]["after_190_tokens"]["llm_turn_p95_s"] > ba["medio"]["before_110_tokens"]["llm_turn_p95_s"] + 2
+    assert ba["rapido"]["after_190_tokens"]["llm_turn_p95_s"] <= e2e_latency_sim.C2_P95  # o perfil rapido segue dentro
+    for row in ba.values():  # mais tokens de saida nunca encurta a latencia
+        assert row["after_190_tokens"]["llm_turn_p95_s"] >= row["before_110_tokens"]["llm_turn_p95_s"]
+
+
+def test_profiles_at_110_tokens_reproduce_the_previous_analysis():
+    for name, (p50, p95) in {"rapido": (0.8, 2.0), "medio": (1.8, 4.5), "lento": (3.5, 9.0)}.items():
+        got = e2e_latency_sim.profile(name, e2e_latency_sim.OUT_TOKENS_SLOTS)
+        assert got[0] == pytest.approx(p50, abs=0.05) and got[1] == pytest.approx(p95, abs=0.3)
+
+
+def test_strict_fast_path_buys_little_p95_with_a_fast_llm(e2e):
+    """Por que o fast-path nasce desligado: com LLM rapido, cobrir 40% dos turnos rende menos de 1s no p95 por mensagem."""
+    s = e2e["fast_share_sensitivity"]["rapido"]
+    assert 0 <= s["0.0"] - s["0.4"] < 1.0
+
+
+def test_mix_weights_sum_to_a_typical_conversation():
+    for fs in (0.0, 0.3, 0.4):
+        assert sum(e2e_latency_sim.mix_weights(fs).values()) == pytest.approx(e2e_latency_sim.TURNS_PER_CONVERSATION)
+
+
+def test_reply_in_the_llm_call_costs_about_a_third_more():
+    ba = cost_model.run_all()["before_after_reply_in_llm"]
+    assert ba and all(20 < v["delta_pct"] < 60 for v in ba.values())
 
 
 def test_cache_break_even_matches_the_closed_form():
