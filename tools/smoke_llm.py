@@ -49,10 +49,11 @@ from autoseguro.llm.base import LLMResult, Usage  # noqa: E402
 from autoseguro.llm.config import ConfigError, LLMConfig  # noqa: E402
 from autoseguro.llm.diagnose import explain_failure  # noqa: E402
 from autoseguro.llm.factory import make_llm  # noqa: E402
-from autoseguro.llm.guarded import GuardedLLM, UnsafePayload, assert_safe_to_send  # noqa: E402,F401  (reexportados)
+from autoseguro.llm.guarded import GuardedLLM, GuardedResult, UnsafePayload, assert_safe_to_send  # noqa: E402,F401  (reexportados)
 from autoseguro.llm.prompt import build_system_prompt, build_user_message  # noqa: E402
 from autoseguro.llm.redact import redact  # noqa: E402
 from autoseguro.llm.schema import SlotValue, TurnOutput  # noqa: E402
+from autoseguro.templates import RISK_INTENTS, Reply, select_reply  # noqa: E402
 from autoseguro.llm.throttle import ProtocolError, QuotaExhausted, QuotaLog, RateLimiter, ServiceUnstable, ThrottledLLM  # noqa: E402
 from tools.smoke_messages import MESSAGES, SMOKE_TODAY, SmokeMessage  # noqa: E402
 
@@ -128,7 +129,7 @@ class CallRecord:
     http_status: int | None = None
 
 
-def score_call(msg: SmokeMessage, res: LLMResult, base: FactBase, violations: tuple[Violation, ...] | None = None) -> dict:
+def score_call(msg: SmokeMessage, res: LLMResult, base: FactBase, violations: tuple[Violation, ...] | None = None, reply: Reply | None = None) -> dict:
     s: dict = {"valid": res.output is not None}
     if res.output is None:
         return s
@@ -160,12 +161,21 @@ def score_call(msg: SmokeMessage, res: LLMResult, base: FactBase, violations: tu
     if violations is None:
         violations = check_reply(out.reply, facts_used=out.facts_used, base=base, lead_texts=lead_texts_of(msg))
     plain = strip_accents(out.reply).lower()
+    if reply is None:  # o que de fato chega ao lead: template nas intencoes de risco, LLM (sob o guardrail) nas neutras
+        reply = select_reply(GuardedResult(res, violations), base, lead_text=msg.text)
+    delivered = strip_accents(reply.text).lower()
+    risk_message = msg.intents <= RISK_INTENTS
     fast = fast_extract(msg.asked_slot, msg.text, today=SMOKE_TODAY)
     llm_value = out.value(msg.asked_slot) if msg.asked_slot else None
     s.update(slot_outcomes=kinds, silent_wrong=wrong_silent, intent_ok=out.intent in msg.intents,
              guardrail_ok=not violations, violations=sorted({v.rule for v in violations}),
              forbidden_leak=[f for f in msg.forbidden_in_reply if strip_accents(f).lower() in plain],
              cited_required=set(msg.must_cite) <= set(out.facts_used), reply_words=len(out.reply.split()),
+             # --- o que foi ENTREGUE ao lead (os criterios usam estes; as chaves acima descrevem o que o LLM escreveu, mesmo quando foi descartado) ---
+             llm_reply=out.intent not in RISK_INTENTS, delivered_source=reply.source, delivered_text=reply.text,
+             delivered_forbidden_leak=[f for f in msg.forbidden_in_reply if strip_accents(f).lower() in delivered],
+             delivered_cited_required=set(msg.must_cite) <= set(reply.facts_used),
+             risk_message=risk_message, risk_recognized=(out.intent in RISK_INTENTS) if risk_message else None,
              fast_value=fast, fast_diverges=bool(fast is not None and (llm_value is None or norm(msg.asked_slot, llm_value) != norm(msg.asked_slot, fast))))
     return s
 
@@ -208,7 +218,9 @@ def summarize(records: list[CallRecord], model: str) -> dict:
     rs = [r for r in records if not r.warmup]
     ok = [r for r in rs if r.score.get("valid")]
     lat = [r.latency_s for r in rs if r.error is None]
-    words = [r.score["reply_words"] for r in ok]
+    neutral = [r for r in ok if r.score.get("llm_reply", True)]   # replies redigidos pelo LLM (as intencoes de risco saem por template)
+    risk = [r for r in ok if r.score.get("risk_message")]
+    words = [r.score["reply_words"] for r in neutral]
     usage = [r.usage for r in rs if r.usage]
     price = cost_model.PRICES.get(MODEL_PRICE_KEY.get(model, ""), None)
     per_call_usd = 0.0 if model.endswith(":free") else None
@@ -233,10 +245,15 @@ def summarize(records: list[CallRecord], model: str) -> dict:
         "silent_wrong": sum(r.score["silent_wrong"] for r in ok),
         "omissions": sum(v == "omitted" for r in ok for v in r.score["slot_outcomes"].values()),
         "intent_accuracy": round(sum(r.score["intent_ok"] for r in ok) / len(ok), 3) if ok else 0.0,
-        "guardrail_pass_rate": round(sum(r.score["guardrail_ok"] for r in ok) / len(ok), 3) if ok else 0.0,
-        "guardrail_violations": {rule: sum(rule in r.score["violations"] for r in ok) for rule in sorted({v for r in ok for v in r.score["violations"]})},
-        "forbidden_leaks": sum(len(r.score["forbidden_leak"]) for r in ok),
-        "required_fact_cited": all(r.score["cited_required"] for r in ok),
+        "neutral_replies": len(neutral),
+        "guardrail_pass_rate": round(sum(r.score["guardrail_ok"] for r in neutral) / len(neutral), 3) if neutral else 1.0,
+        "guardrail_violations": {rule: sum(rule in r.score["violations"] for r in neutral) for rule in sorted({v for r in neutral for v in r.score["violations"]})},
+        "risk_calls": len(risk),
+        "risk_recognition_rate": round(sum(bool(r.score["risk_recognized"]) for r in risk) / len(risk), 3) if risk else None,
+        "delivered": {src: sum(r.score.get("delivered_source", "llm") == src for r in ok) for src in sorted({r.score.get("delivered_source", "llm") for r in ok})},
+        "llm_reply_on_risk_turns_would_leak": sum(len(r.score["forbidden_leak"]) for r in ok if not r.score.get("llm_reply", True)),
+        "forbidden_leaks": sum(len(r.score.get("delivered_forbidden_leak", r.score["forbidden_leak"])) for r in ok),
+        "required_fact_cited": all(r.score.get("delivered_cited_required", r.score["cited_required"]) for r in ok),
         "reply_words": {"mean": round(sum(words) / len(words), 1), "p95": pct(words, 95), "max": max(words),
                         "share_le_target": round(sum(w <= budgets.REPLY_TARGET_WORDS for w in words) / len(words), 3)} if words else None,
         "fast_path": {"applicable_calls": len(fast_applies), "abstained_calls": len(ok) - len(fast_applies),
@@ -248,7 +265,8 @@ def summarize(records: list[CallRecord], model: str) -> dict:
         "saida estruturada valida em 100%": s["valid_output_rate"] == 1.0,
         f"p95 projetado do turno sem cotacao <= {budgets.TURN_P95_NO_QUOTE_S:.0f}s": bool(projection and projection["no_quote_p95_s"] <= budgets.TURN_P95_NO_QUOTE_S),
         f"p95 projetado do turno com cotacao <= {budgets.TURN_P95_WITH_QUOTE_S:.0f}s": bool(projection and projection["with_quote_p95_s"] <= budgets.TURN_P95_WITH_QUOTE_S),
-        "guardrail aprova >= 80% dos replies": s["guardrail_pass_rate"] >= 0.8,
+        "guardrail aprova >= 80% dos replies redigidos pelo LLM (as intencoes de risco saem por template)": s["guardrail_pass_rate"] >= 0.8,
+        "intencao de risco reconhecida em 100% das mensagens de risco": s["risk_recognition_rate"] in (None, 1.0),
         f"reply curto: >= 90% com <= {budgets.REPLY_TARGET_WORDS} palavras e nenhum acima de {budgets.REPLY_HARD_MAX_WORDS}":
             bool(words) and s["reply_words"]["share_le_target"] >= 0.9 and max(words) <= budgets.REPLY_HARD_MAX_WORDS,
         "nenhum reply com termo proibido": s["forbidden_leaks"] == 0,
@@ -272,7 +290,9 @@ def print_report(summaries: list[dict], dry: bool) -> None:
             print(f"  p95 do TURNO projetado  sem cotacao {p['no_quote_p95_s']}s (criterio {budgets.TURN_P95_NO_QUOTE_S:.0f}s)   com cotacao {p['with_quote_p95_s']}s (criterio {budgets.TURN_P95_WITH_QUOTE_S:.0f}s)")
         print(f"  tokens medios  entrada {s['mean_input_tokens']}  saida {s['mean_output_tokens']}  raciocinio {s['mean_reasoning_tokens']}  saida/s {s['output_tokens_per_s']}   US$/chamada {s['usd_per_call']}")
         print(f"  extracao  erros silenciosos {s['silent_wrong']}   omissoes {s['omissions']}   intent {s['intent_accuracy']}   saida valida {s['valid_output_rate']}")
-        print(f"  guardrail aprova {s['guardrail_pass_rate']}  violacoes {s['guardrail_violations']}   reply {s['reply_words']}")
+        print(f"  guardrail aprova {s['guardrail_pass_rate']} (de {s['neutral_replies']} replies do LLM)  violacoes {s['guardrail_violations']}   reply {s['reply_words']}")
+        print(f"  entregue ao lead {s['delivered']} | intencao de risco reconhecida {s['risk_recognition_rate']} em {s['risk_calls']} chamadas "
+              f"| termos proibidos que o LLM teria escrito nas turnos de risco: {s['llm_reply_on_risk_turns_would_leak']}")
         print(f"  fast-path {s['fast_path']}  ->  {s['fast_path_verdict']}")
         for name, ok in s["checks"].items():
             print(f"    [{'ok' if ok else 'FALHA'}] {name}")

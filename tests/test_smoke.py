@@ -262,3 +262,78 @@ def test_load_env_reads_values_without_overriding_or_printing_them(tmp_path, mon
 
 def test_smoke_today_is_fixed_so_relative_dates_are_reproducible():
     assert SMOKE_TODAY.isoformat() == "2026-10-21"
+
+
+# --- o que e ENTREGUE ao lead: template nas intencoes de risco (smoke de 2026-10-20) ---------------------------------------------------------
+import json as _json  # noqa: E402
+from pathlib import Path as _Path  # noqa: E402
+
+from tools.smoke_llm import lead_texts_of  # noqa: E402
+
+_FIXTURE = _json.loads((_Path(__file__).resolve().parent / "fixtures" / "smoke_replay" / "dots-3-note-preview-2026-10-20.json").read_text(encoding="utf-8"))
+
+
+def _recorded_records():
+    out = []
+    for c in _FIXTURE["calls"]:
+        if c["warmup"]:
+            continue
+        msg = BY_ID[c["msg_id"]]
+        if c["output"] is None:
+            res = LLMResult(None, c["error"], 1.8, None, "content_filter", http_status=200)
+        else:
+            o = c["output"]
+            res = LLMResult(TurnOutput(tuple(SlotValue(s["slot"], s["value"], s["uncertain"]) for s in o["slots"]), o["intent"], tuple(o["facts_used"]), o["reply"]),
+                            None, 1.9, Usage(1340, 61), "stop")
+        out.append(CallRecord(msg.id, "dots", c["repeat"], False, res.error, res.latency_s, None, None, score_call(msg, res, BASE), None, res.http_status))
+    return out
+
+
+def test_a_risk_intent_is_delivered_by_template_even_when_the_llm_wrote_something_terrible():
+    bad = score_call(BY_ID["m11_objecao_de_preco"], result(intent="price_objection", reply="Consigo um desconto de R$ 20 para você"), BASE)
+    assert bad["delivered_source"] == "template_risk" and bad["delivered_forbidden_leak"] == [] and "desconto" not in bad["delivered_text"]
+    assert bad["forbidden_leak"], "o diagnostico do que o LLM escreveu continua registrado"
+    assert bad["llm_reply"] is False and bad["risk_message"] and bad["risk_recognized"]
+
+
+def test_the_carencia_message_cites_the_fact_through_the_template_even_if_the_model_forgot_to():
+    m = BY_ID["m10_duvida_de_carencia"]
+    s = score_call(m, result(intent="ask_coverage_question", reply="Sim, cobre!", facts=[]), BASE)
+    assert not s["cited_required"] and s["delivered_cited_required"] and s["delivered_forbidden_leak"] == []
+    assert s["delivered_text"] == BASE.facts["carencia"].text
+
+
+def test_a_neutral_reply_is_still_delivered_by_the_llm_under_the_guardrail():
+    s = score_call(BY_ID["m02_ano_direto"], result(("veiculo_ano", "2015", False), reply="Anotado! Qual é a sua idade?"), BASE)
+    assert s["delivered_source"] == "llm" and s["llm_reply"] and s["guardrail_ok"]
+    rejected = score_call(BY_ID["m02_ano_direto"], result(("veiculo_ano", "2015", False), reply="Fica por R$ 50 por mês"), BASE)
+    assert rejected["delivered_source"] == "template_fallback" and not rejected["guardrail_ok"]
+
+
+def test_recognizing_a_risk_intent_is_a_100_percent_criterion():
+    m10 = BY_ID["m10_duvida_de_carencia"]
+    missed = score_call(m10, result(intent="provide_info", reply="Anotado!"), BASE)
+    assert missed["risk_message"] and missed["risk_recognized"] is False and missed["delivered_source"] == "llm"
+    ok_calls = [rec("m10", 1.0, {**GOOD_SCORE, "risk_message": True, "risk_recognized": True}) for _ in range(5)]
+    bad_calls = ok_calls + [rec("m10", 1.0, {**GOOD_SCORE, "risk_message": True, "risk_recognized": False})]
+    assert summarize(ok_calls, "vendor/m:free")["checks"]["intencao de risco reconhecida em 100% das mensagens de risco"]
+    s = summarize(bad_calls, "vendor/m:free")
+    assert not s["checks"]["intencao de risco reconhecida em 100% das mensagens de risco"] and not s["passes"] and s["risk_recognition_rate"] == 0.833
+
+
+def test_the_guardrail_criterion_counts_only_the_replies_the_llm_wrote():
+    risk_bad = {**GOOD_SCORE, "llm_reply": False, "guardrail_ok": False, "violations": ["R7_termo_sem_fato"], "reply_words": 90}
+    s = summarize([rec("a", 1.0, GOOD_SCORE) for _ in range(10)] + [rec("m11", 1.0, risk_bad) for _ in range(5)], "vendor/m:free")
+    assert s["guardrail_pass_rate"] == 1.0 and s["neutral_replies"] == 10 and s["reply_words"]["max"] == 12 and s["passes"]
+
+
+def test_the_old_recorded_smoke_rescored_under_the_new_delivery_rules():
+    """As 29 saidas de 2026-10-20 (prompt ANTIGO) sob os criterios novos: o risco sai todo por template e a intencao de risco foi reconhecida nas 8
+    chamadas; os 6 replies reprovados eram todos neutros e continuam reprovados, porque so o prompt novo (fato `necessidades`) os corrige: o re-smoke mede isso."""
+    s = summarize(_recorded_records(), "dots-studio/dots-3-note-preview:free")
+    assert s["delivered"] == {"llm": 15, "template_fallback": 6, "template_risk": 8}, "15 + 6 + 8 = 29"
+    assert s["risk_calls"] == 8 and s["risk_recognition_rate"] == 1.0
+    assert s["neutral_replies"] == 21 and s["guardrail_pass_rate"] == round(15 / 21, 3)
+    assert s["forbidden_leaks"] == 0, "nada proibido chega ao lead nas 8 chamadas de risco"
+    assert s["required_fact_cited"] is True
+    assert s["llm_reply_on_risk_turns_would_leak"] == 0

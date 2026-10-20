@@ -86,7 +86,7 @@ fila entram **além** do SQLite, sem mexer no agente, e qualquer destino novo te
 
 Resumo; as tabelas, a derivação e as premissas estão em [`docs/PLAN.md`](docs/PLAN.md), seções 5 e 6.
 
-- **O LLM redige os turnos de conversa** (saudação, próxima pergunta, explicação de carência, dúvida, objeção) **na mesma chamada que extrai os slots**: saída estruturada
+- **O LLM redige os turnos de conversa neutros** (saudação, próxima pergunta, confirmação; as intenções de risco saem por template, ver D6) **na mesma chamada que extrai os slots**: saída estruturada
   `{slots, intent, facts_used, reply}`, sem chamada extra, com `reply` de no máximo ~40 palavras. **Cotação, recusa e handoff são template fixo**, porque carregam número e promessa.
 - **O `reply` só pode afirmar o que está numa base de fatos derivada do `/planos`**, e todo número dele tem que estar nesses fatos ou ecoar um dado que o lead escreveu. O guardrail confere isso de forma
   mecânica e, se reprovar, o agente usa o template. **Limite assumido:** usando só termos autorizados, uma frase *falsa* ainda passa; regex não lê sentido. O `smoke-llm` tem mensagens feitas para isso, para uma pessoa ler.
@@ -139,6 +139,16 @@ Resumo; as tabelas, a derivação e as premissas estão em [`docs/PLAN.md`](docs
 - Se o lead disser só "2015", não há como saber se é fabricação ou modelo; a pergunta do produto pede o modelo para reduzir isso.
 
 A rede contra esses três é a repetição dos dados na mensagem de cotação.
+
+### D6. Nas intenções de risco o reply é template montado dos fatos; o LLM só redige a conversa neutra
+
+**Motivo:** regex não julga sentido. O smoke de 2026-10-20 trouxe dois replies de risco que o guardrail aprovou e que enganam a olho: `Sim, mas há carência de 30 dias` a quem perguntou se um roubo amanhã é coberto, e `a melhor opção da AutoSeguro` numa objeção de preço. Caçar esses padrões com mais regex é uma corrida perdida; o R7 continua estrito e nenhuma regra nova foi acrescentada.
+
+- **Template (risco):** dúvida de carência ou cobertura, objeção de preço, sinistro, pedido de humano (e `question_not_in_facts`, que é uma dúvida de cobertura sem fato). **LLM (neutro):** saudação, próxima pergunta, confirmação, sob o guardrail R1–R7.
+- [`templates.py`](src/autoseguro/templates.py): a dúvida de cobertura é respondida com o **texto dos fatos** escolhidos pelo que o **lead escreveu** (mesmo léxico do guardrail), não pelo que o modelo citou, que uma injeção poderia manipular; sem fato, a resposta é "não tenho essa informação, e prefiro não chutar". A objeção de preço segue o fluxo do PLAN: **uma** alternativa real, e na segunda hesitação `PRICE_OBJECTION`, sem desconto. Sinistro e pedido de humano viram handoff (`CLAIM_SINISTRO`, `HUMAN_REQUESTED`) com o texto genérico e honesto de D2.
+- **Do LLM, nesses turnos, vale só a intenção.** Por isso **reconhecer a intenção de risco virou critério do smoke (100%)**: se o modelo classifica uma dúvida de carência como `provide_info`, o reply livre dele chega ao lead, ainda sob o guardrail. O smoke pontua o texto **entregue** ao lead, e o guardrail passa a medir só os replies que o LLM de fato escreveu.
+- **Prova:** o corpo de todo template passa no `check_reply` por construção (testado em todas as intenções), e os replies reais enganosos (m10 r2, m11 r1 e r2) são substituídos em teste. Reaplicado às 29 saídas antigas, o smoke novo entrega 8 por template de risco, 15 do LLM e 6 por fallback, com reconhecimento de risco em 8 de 8.
+- **Fica de fora:** `complaint`, `cancel` e `ready_to_close` também são motivos de handoff no PLAN e continuam com o LLM neutro; candidatos naturais ao mesmo tratamento.
 
 ### Demais decisões
 
