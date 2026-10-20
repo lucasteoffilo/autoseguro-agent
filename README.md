@@ -139,3 +139,9 @@ Pré-checagem de elegibilidade, recusa, objeção de preço, necessidade → pla
 O dataset do desafio é sintético, mas é tratado como sensível. Ele não é copiado para este repositório (o caminho vem de
 `DATASET_PATH`). Há testes que reprovam o repo se aparecer PII, segredo ou qualquer trecho de mensagem do dataset
 (`tests/test_repo_hygiene.py`). Nenhum documento aqui cita linhas do dataset, só números agregados.
+
+**A chave do provedor de LLM fica no `.env` (ignorado pelo git) e a sessão do Claude Code que desenvolve este repo não deve lê-lo.**
+[`.claude/settings.json`](.claude/settings.json) nega `Read` e `Edit` do `.env` e das variantes (menos o `.env.example`) e, como camada de melhor esforço, os comandos de shell que citam o arquivo.
+Limites, ditos sem rodeio: (1) a regra só vale em uma sessão aberta **depois** que o arquivo existe, e foi **escrita mas não confirmada** na sessão em que nasceu (a leitura de uma isca passou); (2) a regra de `Bash` casa texto, então um comando que lê o `.env` sem escrever o nome dele (um `grep -r .`, um script) não é pego. **Ela é um freio, não é uma barreira.** A barreira de verdade é o sandbox do Claude Code com `sandbox.filesystem.denyRead`, que aplica o bloqueio ao sistema de arquivos; ele não foi ligado aqui porque restringiria a rede e o acesso ao Docker, de que `make test-integration` e o `pip` dependem (não testei o efeito).
+`make llm-ping` lê a chave por dentro do processo e só imprime `chave: configurada`, nunca o valor, o prefixo nem o tamanho.
+Para verificar a regra numa sessão nova, peça a ela que leia `var/decoy/.env` (um arquivo isca, com conteúdo falso, ignorado pelo git): se ler, a regra não carregou.
