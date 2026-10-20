@@ -2,7 +2,7 @@
 
   LLM_PROVIDER   openrouter (padrao) | openai_compat (qualquer endpoint compativel com OpenAI) | anthropic (ClaudeLLM, opcional)
   LLM_BASE_URL   padrao do openrouter: https://openrouter.ai/api/v1
-  LLM_MODEL      padrao do openrouter: nvidia/nemotron-3-super-120b-a12b:free
+  LLM_MODEL      padrao do openrouter: dots-studio/dots-3-note-preview:free  (ALVO do smoke, nao escolha: quem decide e o smoke)
   LLM_API_KEY    a chave do provedor. Para openrouter, OPENROUTER_API_KEY tambem vale (e o nome que o ecossistema usa)
   LLM_STRUCTURED_OUTPUT   json_schema | none      (so use json_schema se o MODELO suportar: ver docs/PLAN.md, secao 5.5)
   LLM_REASONING_EFFORT    none | minimal | low | medium | high | off   ("off" = nao envia o campo)
@@ -23,7 +23,7 @@ from .. import budgets
 
 PROVIDERS = ("openrouter", "openai_compat", "anthropic")
 DEFAULT_BASE_URL = {"openrouter": "https://openrouter.ai/api/v1"}
-DEFAULT_MODEL = {"openrouter": "nvidia/nemotron-3-super-120b-a12b:free", "anthropic": "claude-haiku-5-5"}
+DEFAULT_MODEL = {"openrouter": "dots-studio/dots-3-note-preview:free", "anthropic": "claude-haiku-5-5"}
 DEFAULT_MAX_TOKENS = {"openrouter": 800, "openai_compat": 800, "anthropic": 600}
 STRUCTURED = ("json_schema", "none")
 _LOCAL_HOSTS = ("localhost", "127.0.0.1", "::1")

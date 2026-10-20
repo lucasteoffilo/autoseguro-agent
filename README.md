@@ -114,8 +114,12 @@ Resumo; as tabelas, a derivação e as premissas estão em [`docs/PLAN.md`](docs
 - **Smoke dentro do free tier** (20 requisições/min, 50/dia sem crédito): 1 modelo, 2 repetições, 31 requisições; limite por minuto respeitado com margem; 429 por minuto espera e repete, 429 diário encerra e marca o dia; toda requisição, inclusive as que falham, é contada em `var/smoke/quota.jsonl`; a cota restante é conferida em `GET /key` antes de gastar. **Falha rápido** (não sabemos se requisição que falha conta na cota): erro de protocolo aborta na hora com a causa provável, e `make llm-ping` antes do smoke gasta uma requisição para descobrir isso.
   A documentação não diz se requisição que falha conta na cota diária, então o smoke assume que conta.
 - **A chave nunca aparece em log, erro, relatório nem saída:** tudo que sai passa por `redact`, e [`tests/test_key_safety.py`](tests/test_key_safety.py) faz o servidor falso devolver a chave em cada modo de falha e varre tudo que o processo escreveu. Verificado removendo o `redact`: os testes reprovam (8 dos 25 na ocasião).
-- **Critério de escolha do modelo, o mesmo de antes:** 0 extrações erradas em silêncio, 100% de saída válida e p95 projetado do turno. O candidato do smoke é `nvidia/nemotron-3-super-120b-a12b:free` (suporta saída estruturada e raciocínio opcional); é candidato, não escolha.
-- **Não verificado:** que o OpenRouter aceita de fato a requisição como montada (os testes usam um servidor local falso), a latência real e a taxa de acerto. Modelos free podem reter o prompt; o gate de PII continua ligado e o smoke só usa mensagens escritas à mão, sem PII.
+- **O contrato é qualquer modelo com saída estruturada que passe no `make llm-ping` e no `make smoke-llm`, não um modelo específico.** Quem decide é o smoke, pelo critério de sempre: 0 extrações erradas em silêncio, 100% de saída válida e p95 projetado do turno.
+  O **alvo** do smoke hoje é `dots-studio/dots-3-note-preview:free` (o default da configuração): declara saída estruturada, o raciocínio não é obrigatório (`reasoning.mandatory: false` no catálogo) e passou no ping. É alvo, não escolha; é um preview com `expiration_date` de 2026-12-31 e um único provedor listado.
+- **Fato operacional: endpoints gratuitos oscilam, e o mock é o caminho reproduzível.** Em 2026-10-20 o primeiro alvo, `nvidia/nemotron-3-super-120b-a12b:free`, devolveu 404 (`Provider returned error`) porque o único provedor dele estava fora do ar: uptime de 0% nos 30 minutos anteriores e 44% no dia, segundo `GET /models/{id}/endpoints`. O mesmo pedido sem `json_schema`, sem `require_parameters` e sem `reasoning` falhou igual, então a causa não era o formato do pedido. Um modelo gratuito pode cair a qualquer hora, e por isso o `llm-ping` gasta 1 requisição antes do smoke de 31.
+  O LLM real mede e gera o log final (que cita o modelo que de fato respondeu); **o que se reproduz é o mock determinístico** (Etapa 2b; até lá, a reprodutibilidade vem dos testes contra servidor local falso e do `make smoke-llm-dry`).
+- **Verificado em uma amostra, não em volume:** o `llm-ping` com o `dots-3-note-preview` aceitou o pedido completo (`json_schema` + `require_parameters` + `reasoning=none`) e devolveu saída válida (2,15 s, 1 amostra, 2026-10-20). **Não verificado:** latência e acerto em volume (é o smoke) e se requisição que falha conta na cota diária. Modelos free podem reter o prompt; o gate de PII continua ligado e o smoke só usa mensagens escritas à mão, sem PII.
+- **O detalhe do erro guarda o que o OpenRouter anexa em `error.metadata`**: o `provider_name` e o retorno bruto do provedor de origem, sempre depois do `redact`. Sem isso, `Provider returned error` não separa "modelo fora do ar" de "parâmetro recusado" (foi o que custou uma requisição a mais no 404 acima). Coberto por `tests/test_key_safety.py`: o servidor falso devolve a chave dentro do `metadata`, em texto e em estrutura, e o corte de 500 caracteres acontece depois de mascarar.
 - **O log final da execução cita o provedor e o modelo usados.**
 
 ### Demais decisões
@@ -131,7 +135,7 @@ Pré-checagem de elegibilidade, recusa, objeção de preço, necessidade → pla
 | `tools/` | `smoke_llm.py` e as 15 mensagens escritas à mão |
 | `analysis/` | Scripts de análise (só agregados) e `results/` |
 | `tests/` | Higiene do repo, análises, integração com a API |
-| `docs/` | `PLAN.md`, `FINDINGS.md` |
+| `docs/` | `PLAN.md`, `FINDINGS.md`, `BACKLOG.md` (o que ficou de fora de propósito) |
 | `vendor/` | **Tudo que veio do desafio**, sem modificação: `vendor/quote-service/` (ver [`NOTICE.md`](NOTICE.md)). O resto do repo é autoral |
 
 ## Dados sensíveis

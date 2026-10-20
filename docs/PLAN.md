@@ -118,7 +118,7 @@ Degradado: rápido 10,4s (handoff 6,3%), médio 12,4s, lento 16,9s. **O p95 de u
 
 | Passo | Modelo | Configuração |
 |---|---|---|
-| Extração + intenção + resposta de conversa (uma chamada por mensagem) | **a escolher no smoke** (referência Anthropic: `claude-haiku-5-5`; candidato free do smoke: `nvidia/nemotron-3-super-120b-a12b:free`) | Anthropic: `effort: low`, saída estruturada (`output_config.format`), **sem `temperature`** (400 em valor fora do padrão), `max_tokens` com folga para o raciocínio, **`max_retries=0`** (o retry é nosso). OpenRouter: `response_format` `json_schema`, `reasoning.effort=none`, `max_tokens=800` (raciocínio consome `max_tokens`, seção 5.5), sem retry do lado do adaptador |
+| Extração + intenção + resposta de conversa (uma chamada por mensagem) | **a escolher no smoke** (referência Anthropic: `claude-haiku-5-5`; alvo free do smoke: `dots-studio/dots-3-note-preview:free`) | Anthropic: `effort: low`, saída estruturada (`output_config.format`), **sem `temperature`** (400 em valor fora do padrão), `max_tokens` com folga para o raciocínio, **`max_retries=0`** (o retry é nosso). OpenRouter: `response_format` `json_schema`, `reasoning.effort=none`, `max_tokens=800` (raciocínio consome `max_tokens`, seção 5.5), sem retry do lado do adaptador |
 | Escalonamento (saída inválida, ambígua ou de baixa confiança) | referência Anthropic: `claude-sonnet-5-5`; no OpenRouter, um modelo maior a definir depois do smoke | Uma tentativa; até 10% das chamadas. **O Sonnet puro fica na fronteira de C2** (seção 5.1) |
 | Cotação, recusa e handoff | nenhum | Template |
 | Resumo do handoff | nenhum | Determinístico a partir dos slots |
@@ -153,19 +153,23 @@ Tokens por conversa (hit 95%): 5 chamadas = 13,2K de entrada (10,5K do cache) + 
 
 ### 5.5 OpenRouter: o que foi conferido na documentação (2026-10-20) e o que não foi
 
-Conferido na documentação e no catálogo de modelos **antes de codar**; nada disso foi exercitado contra a API real (os testes usam um servidor local que imita o formato), então pode ter mudado ou estar mal lido.
+Conferido na documentação e no catálogo de modelos **antes de codar**. Em 2026-10-20 o `make llm-ping` exercitou o pedido completo **uma vez, com um modelo** (fim desta seção); os testes automatizados continuam usando um servidor local que imita o formato. O que não foi exercitado pode ter mudado ou estar mal lido.
 
 | Tema | O que a documentação diz | O que fizemos |
 |---|---|---|
 | Endpoint | `POST /api/v1/chat/completions`, formato OpenAI | `OpenAICompatLLM`, só stdlib |
 | Saída estruturada | `response_format: {type: json_schema, json_schema: {strict: true, ...}}`, suportada **por modelo/endpoint** | Ligada por padrão no OpenRouter, com `provider.require_parameters: true` (só roteia para quem suporta todos os parâmetros do pedido). `LLM_STRUCTURED_OUTPUT=none` desliga. **A saída é sempre validada com o schema local**, sem reparo de cerca de código |
 | Raciocínio | `reasoning.effort`; os tokens de raciocínio **consomem `max_tokens`** | Padrão `none`. `finish_reason=length` com texto vazio é falha explícita (`max_tokens`), não saída vazia. Se o modelo exigir raciocínio, `LLM_REASONING_EFFORT=low` |
-| Erros | Podem vir **dentro de um HTTP 200** (campo `error` no corpo) | Tratados como erro; `choices` ausente e `content` nulo também |
+| Erros | Podem vir **dentro de um HTTP 200** (campo `error` no corpo). `error.metadata` traz `provider_name` e `raw`, o retorno bruto do provedor de origem | Tratados como erro; `choices` ausente e `content` nulo também. **O detalhe guarda `provider_name` e `raw`, depois do `redact`** (com `Provider returned error` sozinho não se separa modelo fora do ar de parâmetro recusado). Cabeçalhos do `metadata` não são copiados |
 | Free tier | Modelos `:free`: **20 req/min** e **50/dia** abaixo de 10 créditos comprados; o dia é UTC | Seção 5.4 |
 | Cota restante | `GET /api/v1/key` informa o uso diário dos modelos free | Consulta antes de gastar; se falhar ou vier em outro formato, segue pela contagem local |
+| Raciocínio obrigatório | `GET /api/v1/models` traz `reasoning.mandatory` por modelo (e, em alguns, `supported_efforts`) | Usado para excluir `liquid/lfm-2.5-2.6b:free` (`mandatory: true`) |
+| Estado dos endpoints | `GET /api/v1/models/{id}/endpoints` (público) lista os provedores do modelo com `status` e uptime de 30 min e de 1 dia | Usado **uma vez, à mão**, para o 404. O significado dos códigos de `status` **não foi conferido** na documentação; o uptime de 0% bastou. Consultar isso no `llm-ping` está em `docs/BACKLOG.md` |
 | **Não dito** | Se requisição que falha (429, 5xx) conta na cota diária | Contamos todas, o que é o lado seguro |
 
-**Modelo candidato do smoke:** `nvidia/nemotron-3-super-120b-a12b:free`. O catálogo lista saída estruturada e raciocínio opcional (dá para usar `none`), e é gratuito. É um **candidato para medir, não uma escolha**: o smoke decide pelo critério de 5.4. Se reprovar por latência ou acerto, o próximo passo é outro modelo free ou um pago barato, não afrouxar o critério.
+**O contrato:** qualquer modelo com saída estruturada validado pelo `make llm-ping` e pelo `make smoke-llm`. **O alvo do smoke hoje é `dots-studio/dots-3-note-preview:free`** (default da configuração): gratuito, declara `structured_outputs`, `reasoning.mandatory: false`, e passou no ping. É **alvo para medir, não escolha**: o smoke decide pelo critério de 5.4. Se reprovar por latência ou acerto, o próximo passo é outro modelo free (candidatos sem raciocínio obrigatório e com endpoint no ar em 2026-10-20: `xingchen-agi/xing4.0-29b-a4b:free`, `nvidia/nemotron-3.5-super-vl:free`) ou um pago barato, não afrouxar o critério. Ressalvas do alvo: é um preview com `expiration_date` de 2026-12-31 e tem um único provedor listado (AtlasCloud), sem alternativa se cair.
+**Fato operacional: endpoints gratuitos oscilam.** O primeiro alvo, `nvidia/nemotron-3-super-120b-a12b:free`, devolveu 404 em 2026-10-20 porque o único provedor dele (Nvidia) estava fora do ar: uptime de 0% nos 30 minutos anteriores e 44% no dia. Diagnóstico com 2 requisições: o pedido pelado (sem `json_schema`, `require_parameters` nem `reasoning`) falhou igual, o que descarta os parâmetros; o `dots-3-note-preview` aceitou o pedido completo e devolveu saída válida (**1 amostra**: 2,15 s, 1328 tokens de entrada, 54 de saída, 0 de raciocínio, reply de 25 palavras aprovado pelo guardrail). Uma amostra não é p95 nem taxa de acerto. Consequência de desenho: o `llm-ping` antes do smoke, a falha rápida em erro de protocolo e **o mock determinístico como o caminho reproduzível** (2b).
+A 1328 de entrada, medida por esse modelo, está abaixo dos ~2400 do modelo de custo; é o tokenizador de um modelo, não uma correção do modelo.
 **Privacidade:** modelos free podem reter ou treinar com os prompts. Por isso o gate de PII fica ligado em todo caminho e o smoke só envia as 15 mensagens escritas à mão, sem PII. **Dado real do dataset, mesmo mascarado, não vai a modelo free.**
 
 ## 6. Guardrail do `reply` e base de fatos

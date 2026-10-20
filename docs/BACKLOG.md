@@ -1,0 +1,14 @@
+# Backlog
+
+O que ficou de fora **de propósito**. Não são promessas: cada item diz por que não foi feito agora e o que o faria valer a pena.
+
+## LLM e diagnóstico
+
+1. **O `llm-ping` consultar `GET /models/{id}/endpoints` quando o 404 vier genérico.**
+   Em 2026-10-20 o 404 `Provider returned error` do primeiro alvo era o provedor de origem fora do ar (uptime de 0% em 30 min), e o ping só dizia "modelo inexistente ou parâmetro recusado". A consulta é um GET público de metadados, não é completion e não conta na cota. O ping poderia imprimir o estado e o uptime dos provedores do modelo e separar as duas hipóteses sem gastar requisição.
+   (O texto do 404 já foi corrigido: lista as duas hipóteses e nomeia o provedor quando o detalhe o trouxer, commit `e5d8f2e`.)
+   *Por que ficou de fora:* o pedido foi manter o ping simples (exatamente uma requisição, nenhuma consulta extra). Agora o detalhe do erro já traz `provider_name` e o retorno bruto, o que cobre boa parte do caso. *Vale fazer se:* o 404 genérico voltar a custar tempo de diagnóstico. Antes, conferir na documentação o significado dos códigos de `status` dos endpoints (o `-5` visto não foi conferido).
+
+2. **Separar `json_schema` de `provider.require_parameters` no adaptador.**
+   Hoje o adaptador os envia juntos (e `require_parameters` também quando há `reasoning`). Por isso o passo "acrescenta só o `json_schema`" do diagnóstico de 2026-10-20 não seria possível por configuração: o mais próximo era `json_schema + require_parameters`. Um `LLM_REQUIRE_PARAMETERS=on|off` permitiria descascar um parâmetro de cada vez.
+   *Por que ficou de fora:* não foi necessário, o diagnóstico fechou no primeiro passo.

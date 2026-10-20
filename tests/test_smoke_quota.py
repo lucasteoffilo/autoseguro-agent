@@ -6,6 +6,7 @@ from datetime import UTC, datetime
 
 import pytest
 
+from autoseguro.llm.config import DEFAULT_MODEL
 from tools import smoke_llm
 from tools.smoke_messages import MESSAGES, SmokeMessage
 from tests.fake_servers import CANARY_KEY, GOOD, FakeServer, chat_json, error_json
@@ -45,7 +46,7 @@ def test_a_full_run_sends_exactly_the_planned_requests_and_counts_each_one(tmp_p
     assert data["requests_sent"] == 31 and data["quota"] == {"limit": 50, "used_today": 31} and data["retries_on_429"] == 0
     assert data["provider"] == "openrouter" and data["model"].endswith(":free") and data["config"]["structured_output"] == "json_schema"
     out = capsys.readouterr().out
-    assert "requisicao 31/50 hoje" in out and "requisicoes enviadas nesta execucao: 31" in out and "provedor: openrouter | modelo: nvidia/" in out
+    assert "requisicao 31/50 hoje" in out and "requisicoes enviadas nesta execucao: 31" in out and f"provedor: openrouter | modelo: {DEFAULT_MODEL['openrouter']}" in out
 
 
 def test_every_request_carries_the_documented_openrouter_shape(tmp_path, server):

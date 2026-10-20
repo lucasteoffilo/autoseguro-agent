@@ -193,7 +193,7 @@ def test_summary_passes_with_fast_clean_calls_and_fails_on_a_single_silent_error
 
 
 def test_a_free_model_costs_zero_and_the_report_names_the_model():
-    s = summarize([rec("a", 1.0, GOOD_SCORE) for _ in range(20)], "nvidia/nemotron-3-super-120b-a12b:free")
+    s = summarize([rec("a", 1.0, GOOD_SCORE) for _ in range(20)], "vendor/model:free")
     assert s["usd_per_call"] == 0.0 and s["model"].endswith(":free")
 
 
