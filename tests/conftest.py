@@ -28,6 +28,14 @@ def _repo_files() -> list[Path]:
     return [p for p in paths if p.is_file()]
 
 
+@pytest.fixture(autouse=True)
+def _isolate_llm_credentials(monkeypatch):
+    """Nenhum teste enxerga credencial real: limpa as variaveis de LLM do ambiente de quem roda os testes."""
+    for name in list(os.environ):
+        if name.startswith("LLM_") or name in ("OPENROUTER_API_KEY", "ANTHROPIC_API_KEY"):
+            monkeypatch.delenv(name, raising=False)
+
+
 @pytest.fixture(scope="session")
 def repo_text_files() -> list[tuple[str, str]]:
     """(caminho relativo, texto) de todo arquivo de texto do repo, exceto allowlist e lockfiles."""
