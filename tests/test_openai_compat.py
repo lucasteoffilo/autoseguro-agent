@@ -189,3 +189,51 @@ def test_the_error_detail_never_echoes_the_key(server):
 
 def test_repr_never_shows_the_key(server):
     assert CANARY_KEY not in repr(make(server)) and CANARY_KEY not in str(make(server))
+
+
+# --- error.metadata: o que distingue "modelo fora do ar" de "parametro recusado" -----------------------------------------------------------
+def test_the_detail_keeps_the_provider_name_and_the_upstream_return(server):
+    """O caso real: 404 'Provider returned error'. Sem o metadata, nao ha como saber se o modelo caiu ou se o parametro foi recusado."""
+    server.reply(404, error_json(404, "Provider returned error", provider_name="Nvidia", raw="model endpoint is not available"))
+    res = make(server).turn("x")
+    assert res.error == "http_404"
+    assert res.detail == "Provider returned error | provedor=Nvidia | retorno=model endpoint is not available"
+
+
+def test_a_structured_upstream_return_is_kept_as_compact_json(server):
+    server.reply(502, error_json(502, "Provider returned error", provider_name="Phala", raw={"error": {"code": 503, "message": "overloaded"}}))
+    detail = make(server).turn("x").detail
+    assert detail == 'Provider returned error | provedor=Phala | retorno={"error": {"code": 503, "message": "overloaded"}}'
+
+
+def test_the_upstream_return_is_collapsed_to_one_line_and_capped(server):
+    server.reply(500, error_json(500, "Provider returned error", provider_name="P", raw="linha 1\n\n   linha 2\t" + "x" * 5000))
+    detail = make(server).turn("x").detail
+    assert "\n" not in detail and "linha 1 linha 2" in detail
+    assert len(detail) <= 501 and detail.endswith("…"), "limite de 500 caracteres mais a reticencia"
+
+
+def test_the_metadata_also_counts_when_the_error_comes_inside_a_200(server):
+    server.reply(200, error_json(404, "Provider returned error", provider_name="Nvidia", raw="gone"))
+    res = make(server).turn("x")
+    assert res.error == "http_404" and res.detail == "Provider returned error | provedor=Nvidia | retorno=gone"
+
+
+@pytest.mark.parametrize("metadata", [None, "texto", ["lista"], 7, {}, {"provider_name": 5, "raw": None}, {"provider_name": "  ", "raw": ""},
+                                      {"raw": {}}, {"raw": []}, {"headers": {"x": "y"}}])
+def test_odd_or_empty_metadata_never_breaks_and_adds_nothing(server, metadata):
+    server.reply(404, {"error": {"code": 404, "message": "Provider returned error", "metadata": metadata}})
+    res = make(server).turn("x")
+    assert res.error == "http_404" and res.detail == "Provider returned error"
+
+
+def test_other_metadata_fields_such_as_headers_are_not_copied(server):
+    server.reply(429, error_json(429, "Rate limit exceeded: free-models-per-day", headers={"X-RateLimit-Limit": "50", "Authorization": "x"},
+                                 provider_name="OpenInference"))
+    res = make(server).turn("x")
+    assert res.quota_kind == "daily" and "X-RateLimit" not in res.detail and "Authorization" not in res.detail and "provedor=OpenInference" in res.detail
+
+
+def test_the_429_classification_still_reads_the_metadata(server):
+    server.reply(429, error_json(429, "Provider returned error", raw="free-models-per-day limit reached"))
+    assert make(server).turn("x").quota_kind == "daily"

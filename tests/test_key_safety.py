@@ -32,6 +32,11 @@ SCENARIOS = {
     "429_diario_com_eco": (429, error_json(429, "free-models-per-day " + ECHO), None),
     "200_com_erro_e_eco": (200, error_json(502, ECHO), None),
     "pagina_html_com_chave": (502, f"<html><body>Bad gateway for {CANARY_KEY}</body></html>".encode(), None),
+    "404_metadata_raw_texto_com_eco": (404, error_json(404, "Provider returned error", provider_name="Nvidia",
+                                                       raw=f"upstream rejected the key {CANARY_KEY}. Authorization: Bearer {CANARY_KEY}"), None),
+    "502_metadata_estruturado_com_eco": (502, error_json(502, "Provider returned error", provider_name=f"Prov-{CANARY_KEY}",
+                                                         raw={"error": {"message": f"bad key {CANARY_KEY}", "x-api-key": CANARY_KEY,
+                                                                        "headers": {"authorization": f"Bearer {CANARY_KEY}"}}}), None),
     "chave_dentro_da_resposta_do_modelo": (200, echo_in_reply(), None),
     "sucesso": (200, chat_json(json.dumps(GOOD)), None),
 }
@@ -61,7 +66,7 @@ def run(tmp_path, server, *extra) -> int:
 
 # Codigo de saida esperado por cenario: erro de protocolo aborta na hora (6), servico instavel apos o backoff (7), limite diario (4); resposta do
 # modelo, certa ou errada, e medicao (0 ou 1).
-EXPECTED_EXIT = {"401_com_eco": {6}, "402_com_eco": {6}, "500_com_eco": {7}, "429_por_minuto_com_eco": {7}, "429_diario_com_eco": {4},
+EXPECTED_EXIT = {"404_metadata_raw_texto_com_eco": {6}, "502_metadata_estruturado_com_eco": {7}, "401_com_eco": {6}, "402_com_eco": {6}, "500_com_eco": {7}, "429_por_minuto_com_eco": {7}, "429_diario_com_eco": {4},
                  "200_com_erro_e_eco": {7}, "pagina_html_com_chave": {7}, "chave_dentro_da_resposta_do_modelo": {0, 1}, "sucesso": {0, 1}}
 
 
@@ -119,6 +124,29 @@ def test_the_ping_redacts_an_unexpected_exception_that_carries_the_key(tmp_path,
     assert llm_ping.main(["--base-url", server.url, "--out-dir", str(tmp_path)]) == 5
     everything = written_by_the_process(tmp_path, capsys)
     assert CANARY_KEY not in everything and "ERRO INESPERADO: RuntimeError" in everything and REDACTED in everything
+
+
+def test_the_metadata_is_kept_in_the_detail_but_only_after_redaction(server):
+    """O ganho (provedor e retorno bruto no detalhe) e o risco (o retorno bruto pode ecoar a chave) andam juntos: aqui os dois sao provados."""
+    status, payload, headers = SCENARIOS["404_metadata_raw_texto_com_eco"]
+    server.reply(status, payload, headers)
+    adapter = OpenAICompatLLM("m:free", smoke_llm.load_fact_base(), base_url=server.url, api_key=CANARY_KEY, provider="openrouter", timeout_s=2)
+    res = adapter.turn("oi")
+    assert "provedor=Nvidia" in res.detail and "retorno=upstream rejected the key " in res.detail, "o metadata chegou ao detalhe"
+    assert REDACTED in res.detail and CANARY_KEY not in res.detail and "sk-or" not in res.detail and "CANARY" not in res.detail
+    status, payload, headers = SCENARIOS["502_metadata_estruturado_com_eco"]
+    server.reply(status, payload, headers)
+    res = adapter.turn("oi")
+    assert "provedor=Prov-" in res.detail and REDACTED in res.detail and "CANARY" not in res.detail and "sk-or" not in res.detail
+
+
+def test_truncating_the_detail_cannot_leave_a_piece_of_the_key(server):
+    """O corte e feito DEPOIS de mascarar: uma chave que cruza o limite de 500 caracteres nao deixa prefixo para tras."""
+    for pad in range(430, 505):  # o prefixo 'Provider returned error | provedor=P | retorno=' tem 47 caracteres: a chave cruza o limite de 500 com pad ~ 443-452
+        server.reply(404, error_json(404, "Provider returned error", provider_name="P", raw="x" * pad + CANARY_KEY))
+        adapter = OpenAICompatLLM("m:free", smoke_llm.load_fact_base(), base_url=server.url, api_key=CANARY_KEY, provider="openrouter", timeout_s=2)
+        detail = adapter.turn("oi").detail
+        assert "sk-or" not in detail and "CANARY" not in detail and "v1-" not in detail, f"pad={pad}"
 
 
 def test_a_timeout_leaks_nothing(tmp_path, server, capsys):

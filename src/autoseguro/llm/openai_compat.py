@@ -31,6 +31,7 @@ from .redact import redact
 from .schema import response_schema
 
 _DAILY = re.compile(r"(?i)per[- ]day|daily|requests per day")
+_DETAIL_LIMIT = 500  # mensagem + provedor + retorno bruto, ja mascarados; o suficiente para distinguir as causas, curto para nao inflar log
 
 
 class _Timeout(Exception):
@@ -146,6 +147,22 @@ class OpenAICompatLLM:
             return LLMResult(None, "connection", time.perf_counter() - t0, None, None)
         return self._interpret(status, headers, raw, time.perf_counter() - t0)
 
+    def _detail(self, err: Any, message: str | None) -> str | None:
+        """O que o provedor disse do erro: a mensagem e o que o OpenRouter anexa em `error.metadata`, o `provider_name` e o retorno bruto do provedor
+        de ORIGEM (`raw`). Sem isso, "Provider returned error" nao distingue um modelo fora do ar de um parametro recusado. Tudo passa por UM
+        `redact` (que mascara antes de truncar, entao um corte nunca deixa pedaco de chave); nada de `metadata.headers`."""
+        parts = [message] if message else []
+        meta = err.get("metadata") if isinstance(err, dict) else None
+        if isinstance(meta, dict):
+            name = meta.get("provider_name")
+            if isinstance(name, str) and name.strip():
+                parts.append(f"provedor={name.strip()}")
+            raw = meta.get("raw")
+            if raw not in (None, "", {}, []):
+                text = raw if isinstance(raw, str) else json.dumps(raw, ensure_ascii=False, default=str)
+                parts.append("retorno=" + " ".join(text.split()))
+        return redact(" | ".join(parts), [self._api_key], limit=_DETAIL_LIMIT) or None
+
     def _interpret(self, status: int, headers: dict[str, str], raw: bytes, latency: float) -> LLMResult:
         try:
             body = json.loads(raw)
@@ -153,7 +170,7 @@ class OpenAICompatLLM:
             body = None
         err = body.get("error") if isinstance(body, dict) else None
         message = err.get("message") if isinstance(err, dict) and isinstance(err.get("message"), str) else None
-        detail = redact(message, [self._api_key], limit=200) or None
+        detail = self._detail(err, message)
         code = err.get("code") if isinstance(err, dict) else None
         effective = status if status >= 400 else (code if isinstance(code, int) and code >= 400 else status)  # erro dentro de um HTTP 200
 
