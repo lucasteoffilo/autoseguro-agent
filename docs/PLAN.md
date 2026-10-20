@@ -228,10 +228,11 @@ Motivos (enum fixo e versionado em `HandoffReason`; um teste garante que esta ta
 A cada mensagem o LLM devolve `{slots, intent, facts_used, reply}`. **Quem decide o próximo passo é o orquestrador, pelo estado, e não o LLM.** Ordem: **ano do veículo → idade → (pré-checagem) → CEP → necessidade → data de início → cotar → apresentar**.
 
 - **Conversa (LLM, com guardrail):** saudação, próxima pergunta, explicação de carência, dúvida, objeção. **Template:** cotação, recusa, handoff e o fallback de cada pergunta.
-- **Dado incerto:** slot marcado `uncertain` (ou com dois valores) **nunca vira valor**: o agente pergunta de novo. Ano de nascimento não vira idade.
+- **Ancoragem (invariante):** nenhum slot chega à `/quote` sem estar **ancorado** no texto do lead (literal, único, sem hesitação) ou **confirmado** por ele. O LLM só propõe; `anchoring.py` decide sem modelo. Valor fora do texto, mais de um candidato, hesitação, incerteza do modelo e dado **derivado** (ano de nascimento, data relativa: **sempre** confirma, sem checar faixa de preço) ficam pendentes, e a confirmação é **template**. Ano de nascimento nunca vira idade. Ver README, D5.
+- **Pergunta do ano:** o produto pede o **ano do modelo** (no documento `2015/2016`, vale o segundo); a confirmação mostra `modelo 2016`.
 - **Necessidade → plano.** Três opções em linguagem simples, derivadas das coberturas do `/planos`. Mapeia o menor plano que cobre o pedido. Ambíguo: pergunta de novo uma vez; depois `DATA_AMBIGUOUS`.
 - **Pré-checagem.** Só quando prevê recusa o agente faz uma chamada de confirmação (idade e ano). Se a API disser 200, a divergência é registrada e o preço parcial **nunca** é exibido. Nunca diz "recusado" sem a API.
-- **Apresentação.** Recap dos dados, mensalidade, primeiro pagamento (pro-rata, quando houver), franquia e carência de 30 dias. Confirmação antes de cotar só quando a extração veio ambígua.
+- **Apresentação.** Recap dos dados, mensalidade, primeiro pagamento (pro-rata, quando houver), franquia e carência de 30 dias. Confirmação antes de cotar só quando algum slot não está ancorado. **A mensagem de cotação repete os dados usados** (`questions.recap`: "Dados usados: modelo 2016, 42 anos, CEP …"): rede visível, porque negação, número por extenso e número com dono errado escapam da ancoragem (limites conhecidos, README D5).
 - **Higiene de entrada** (`slots.py`): CEP como texto de 8 dígitos, **sem completar zero perdido**; `plano_id` explícito; `data_inicio` hoje ou futura; ano-modelo futuro vai ao humano.
 
 ## 9. Persistência (SQLite, 4 tabelas)

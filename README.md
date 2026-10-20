@@ -122,6 +122,24 @@ Resumo; as tabelas, a derivação e as premissas estão em [`docs/PLAN.md`](docs
 - **O detalhe do erro guarda o que o OpenRouter anexa em `error.metadata`**: o `provider_name` e o retorno bruto do provedor de origem, sempre depois do `redact`. Sem isso, `Provider returned error` não separa "modelo fora do ar" de "parâmetro recusado" (foi o que custou uma requisição a mais no 404 acima). Coberto por `tests/test_key_safety.py`: o servidor falso devolve a chave dentro do `metadata`, em texto e em estrutura, e o corte de 500 caracteres acontece depois de mascarar.
 - **O log final da execução cita o provedor e o modelo usados.**
 
+### D5. O preço não depende da acurácia do modelo: slot só chega à `/quote` ancorado no texto do lead ou confirmado por ele
+
+**Motivo:** o primeiro smoke real deixou passar duas extrações erradas em silêncio. Uma (`o carro é 2015 mas o modelo é 2016` → `2016` sem incerteza) muda a faixa de idade do veículo e o preço em cerca de 21%. O prompt já proibia as duas; o modelo obedeceu numa repetição e não na outra. Instrução no prompt não é garantia, então a garantia saiu do modelo.
+
+- **O LLM só propõe.** [`anchoring.py`](src/autoseguro/anchoring.py) decide, sem modelo: um valor é **ancorado** se aparece literalmente no que o lead escreveu, é o único candidato daquele slot e ninguém hesitou. Todo o resto fica **pendente**: valor fora do texto (inventado, calculado ou "completado", como o zero à esquerda do CEP), mais de um candidato, hesitação ("acho que", "uns 35") ou incerteza marcada pelo modelo. A flag `uncertain` só pode **acrescentar** confirmações, nunca retirar.
+- **Derivação sempre confirma**, sem checar se a faixa de preço muda: menos código e mais seguro. Ano de nascimento nunca vira idade (pergunta-se "quantos anos você tem hoje?"), e data relativa ("segunda que vem") é confirmada com a data calculada à vista.
+- **A confirmação é template** ([`questions.py`](src/autoseguro/questions.py)), não o LLM. O produto pede o **ano do modelo** (no documento `2015/2016`, vale o segundo), e a confirmação mostra `modelo 2016`. A mensagem de cotação repete os dados usados (`questions.recap`), como rede visível para o lead.
+- **Invariante, por tipo:** só o `SlotLedger` cria `VerifiedSlots`; só ele monta um `QuoteRequest`; só o `QuoteGate` chama o cliente da `/quote`. [`tests/test_anchoring.py`](tests/test_anchoring.py) prova com um **LLM hostil** (slots inventados com confiança total, direcionado e 3000 casos aleatórios com semente: nenhum valor verificado fora do texto, nenhuma chamada à `/quote`) e com o **replay das 29 saídas reais** do smoke, que viram fixture. Resultado do replay: os dois erros silenciosos viram pendência, e **0 das 10 mensagens limpas** pedem confirmação; as 8 ambíguas pedem todas. A amostra é enviesada de propósito: a taxa real de confirmações no tráfego não foi medida.
+
+**Limites conhecidos da ancoragem, sem código (documentados, não resolvidos):**
+- **Negação:** "o carro **não** é 2015" ancora `2015`, que é literal e único.
+- **Número por extenso:** "trinta e cinco" não é candidato; cai em pergunta (seguro, mas custa um turno).
+- **Número com dono errado:** "meu filho tem 20 anos" ancora `20` como idade.
+- A hesitação é detectada por uma lista fechada de palavras, e "sim" na confirmação também; o que está fora dela não confirma.
+- Se o lead disser só "2015", não há como saber se é fabricação ou modelo; a pergunta do produto pede o modelo para reduzir isso.
+
+A rede contra esses três é a repetição dos dados na mensagem de cotação.
+
 ### Demais decisões
 
 Pré-checagem de elegibilidade, recusa, objeção de preço, necessidade → plano, modo mock do LLM, persistência: ver
