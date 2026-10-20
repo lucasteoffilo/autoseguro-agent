@@ -43,7 +43,8 @@ def test_a_full_run_sends_exactly_the_planned_requests_and_counts_each_one(tmp_p
     assert len(reqs) == 31 and {r["outcome"] for r in reqs} == {"ok"}
     (report,) = tmp_path.glob("smoke-*.json")
     data = json.loads(report.read_text())
-    assert data["requests_sent"] == 31 and data["quota"] == {"limit": 50, "used_today": 31} and data["retries_on_429"] == 0
+    assert data["requests_sent"] == 31 and data["quota"]["limit"] == 50 and data["quota"]["used_today"] == 31 and data["retries_on_429"] == 0
+    assert data["quota"]["limit_source"].startswith("padrao"), "sem consulta ao provedor, o limite e o padrao"
     assert data["provider"] == "openrouter" and data["model"].endswith(":free") and data["config"]["structured_output"] == "json_schema"
     out = capsys.readouterr().out
     assert "requisicao 31/50 hoje" in out and "requisicoes enviadas nesta execucao: 31" in out and f"provedor: openrouter | modelo: {DEFAULT_MODEL['openrouter']}" in out
@@ -70,7 +71,7 @@ def test_it_asks_openrouter_for_the_real_remaining_quota_and_aborts_if_it_is_sho
     assert smoke_llm.main(["--base-url", server.url, "--out-dir", str(tmp_path), "--rpm", "60000", "--timeout", "3"]) == 4
     assert [(r["method"], r["path"]) for r in server.requests] == [("GET", "/key")], "so a consulta de cota saiu; nenhuma chamada de chat"
     out = capsys.readouterr()
-    assert "OpenRouter diz restar 5" in out.out and "restam 5" in out.err
+    assert "provedor: usou 45 de 50, restam 5" in out.out and "restam 5" in out.err
 
 
 def test_when_openrouter_confirms_enough_quota_the_run_proceeds(tmp_path, server):
@@ -82,7 +83,7 @@ def test_when_openrouter_confirms_enough_quota_the_run_proceeds(tmp_path, server
 def test_an_unreachable_quota_endpoint_does_not_block_the_run_the_local_log_still_protects(tmp_path, server, capsys):
     server.queue(500, error_json(500, "boom"))
     smoke_llm.main(["--base-url", server.url, "--out-dir", str(tmp_path), "--rpm", "60000", "--backoff-base-s", "0", "--timeout", "3"])
-    assert "OpenRouter diz restar desconhecido" in capsys.readouterr().out and len(posts(server)) == PLANNED
+    assert "provedor: sem leitura (GET /key falhou)" in capsys.readouterr().out and len(posts(server)) == PLANNED
 
 
 def test_a_per_minute_429_is_backed_off_retried_and_counted(tmp_path, server, capsys):
@@ -189,3 +190,113 @@ def test_a_bad_model_output_is_not_a_reason_to_abort(tmp_path, server):
     server.reply(200, chat_json("isto nao e JSON"))
     assert run(tmp_path, server) == 1
     assert len(posts(server)) == PLANNED
+
+
+# --- o limite diario SEGUE o provedor (GET /key), com 50 de fallback --------------------------------------------------------------------------
+def seed_requests(tmp_path, n: int, *, extra: list[dict] | None = None) -> None:
+    now = datetime.now(UTC).isoformat()
+    rows = [{"ts": now, "kind": "request", "provider": "openrouter", "model": "m:free", "outcome": "ok", "status": 200} for _ in range(n)]
+    (tmp_path / "quota.jsonl").write_text("".join(json.dumps(r) + "\n" for r in rows + (extra or [])))
+
+
+def key_body(used: int, limit: int, remaining: int) -> dict:
+    return {"data": {"is_free_tier": False, "free_model_daily_requests": {"used": used, "limit": limit, "remaining": remaining}}}
+
+
+def with_key(server, before: dict, after: dict | None = None) -> None:
+    server.route("GET", "/key", 200, before)
+    if after is not None:
+        server.route("GET", "/key", 200, after)
+
+
+def test_with_35_used_today_the_fixed_limit_of_50_refuses_the_resmoke_but_the_providers_1000_runs_it(tmp_path, server, capsys):
+    """O caso real de 2026-10-20: 35 requisicoes locais, o provedor dizendo limit 1000. Controle negativo primeiro: sem o provedor, 35 + 31 > 50."""
+    seed_requests(tmp_path, 35)
+    assert run(tmp_path, server) == 4 and server.requests == [], "limite fixo de 50: restam 15, o plano precisa de 31"
+    assert "restam 15" in capsys.readouterr().err
+    with_key(server, key_body(1, 1000, 999), key_body(32, 1000, 968))
+    smoke_llm.main(["--base-url", server.url, "--out-dir", str(tmp_path), "--rpm", "60000", "--backoff-base-s", "0", "--timeout", "3"])
+    assert len(posts(server)) == PLANNED, "com o limit do provedor, cabe"
+    out = capsys.readouterr().out
+    assert "local 35/1000 usadas (limite: provedor)" in out and "provedor: usou 1 de 1000, restam 999" in out
+    data = json.loads(next(tmp_path.glob("smoke-*.json")).read_text())
+    assert data["quota"]["limit"] == 1000 and data["quota"]["limit_source"] == "provedor" and data["quota"]["used_today"] == 66
+
+
+def test_the_report_records_used_limit_and_remaining_before_and_after(tmp_path, server, capsys):
+    with_key(server, key_body(1, 1000, 999), key_body(32, 1000, 968))
+    smoke_llm.main(["--base-url", server.url, "--out-dir", str(tmp_path), "--rpm", "60000", "--backoff-base-s", "0", "--timeout", "3"])
+    data = json.loads(next(tmp_path.glob("smoke-*.json")).read_text())
+    assert data["remote_quota"] == {"before": {"used": 1, "limit": 1000, "remaining": 999}, "after": {"used": 32, "limit": 1000, "remaining": 968},
+                                    "requests_sent": 31, "provider_counted": 31, "unexplained": 0}
+    out = capsys.readouterr().out
+    assert "cota do provedor depois: usou 32 de 1000, restam 968 | o provedor contou 31 das 31 requisicoes enviadas" in out and "descompasso" not in out
+    remote_rows = [r for r in quota_lines(tmp_path) if r["kind"] == "remote_quota"]
+    assert [(r["phase"], r["used"], r["limit"], r["remaining"]) for r in remote_rows] == [("before", 1, 1000, 999), ("after", 32, 1000, 968)]
+    assert all(set(r) == {"ts", "kind", "phase", "used", "limit", "remaining"} for r in remote_rows), "so numeros"
+
+
+def test_a_mismatch_between_what_we_sent_and_what_the_provider_counted_is_made_visible(tmp_path, server, capsys):
+    """Era o que nao dava para ver: o provedor contou 30 das 31 requisicoes (o que o relatorio de 2026-10-20 deixou como duvida)."""
+    with_key(server, key_body(1, 1000, 999), key_body(31, 1000, 969))
+    smoke_llm.main(["--base-url", server.url, "--out-dir", str(tmp_path), "--rpm", "60000", "--backoff-base-s", "0", "--timeout", "3"])
+    data = json.loads(next(tmp_path.glob("smoke-*.json")).read_text())
+    assert data["remote_quota"]["provider_counted"] == 30 and data["remote_quota"]["unexplained"] == 1
+    assert "descompasso de 1" in capsys.readouterr().out
+
+
+def test_an_abort_after_one_failed_request_still_shows_whether_the_provider_counted_it(tmp_path, server, capsys):
+    """O erro de protocolo custa 1 requisicao; a pergunta aberta e se o provedor a contou. Agora o aborto responde."""
+    with_key(server, key_body(1, 1000, 999), key_body(1, 1000, 999))
+    server.reply(404, error_json(404, "No endpoints found"))
+    assert smoke_llm.main(["--base-url", server.url, "--out-dir", str(tmp_path), "--rpm", "60000", "--backoff-base-s", "0", "--timeout", "3"]) == 6
+    err = capsys.readouterr().err
+    assert "cota do provedor depois: usou 1 de 1000, restam 999 | o provedor contou 0 das 1 requisicoes enviadas (descompasso de 1" in err
+    assert len(posts(server)) == 1
+
+
+@pytest.mark.parametrize("body,why", [
+    ({"data": {"free_model_daily_requests": {"used": 1, "limit": 10**9, "remaining": 5}}}, "limit absurdo"),
+    ({"data": {"free_model_daily_requests": {"used": 1, "limit": 0, "remaining": 0}}}, "limit absurdo"),
+    ({"data": {"free_model_daily_requests": {"used": 1, "limit": "1000", "remaining": 999}}}, "nao inteiros"),
+    ({"data": {"free_model_daily_requests": {"used": 5, "limit": 1000, "remaining": 5000}}}, "absurdos"),
+    ({"data": {"is_free_tier": True}}, "ausente"),
+    ({"data": "texto"}, "ausente"),
+])
+def test_a_missing_or_absurd_limit_falls_back_to_50_and_the_run_is_refused_when_it_does_not_fit(tmp_path, server, capsys, body, why):
+    seed_requests(tmp_path, 35)
+    server.route("GET", "/key", 200, body)
+    assert smoke_llm.main(["--base-url", server.url, "--out-dir", str(tmp_path), "--rpm", "60000", "--timeout", "3"]) == 4
+    out = capsys.readouterr()
+    assert "local 35/50 usadas (limite: padrao; provedor:" in out.out and why in out.out and "restam 15" in out.err
+    assert [r["method"] for r in server.requests] == ["GET"], "nada foi enviado"
+
+
+def test_an_explicit_daily_quota_wins_over_the_provider(tmp_path, server, capsys):
+    seed_requests(tmp_path, 35)
+    with_key(server, key_body(1, 1000, 999))
+    assert smoke_llm.main(["--base-url", server.url, "--out-dir", str(tmp_path), "--rpm", "60000", "--timeout", "3", "--daily-quota", "40"]) == 4
+    captured = capsys.readouterr()
+    assert "local 35/40 usadas (limite: --daily-quota)" in captured.out and "restam 5" in captured.err
+
+
+def test_availability_is_the_smaller_of_the_local_and_the_providers_remaining(tmp_path, server, capsys):
+    with_key(server, key_body(990, 1000, 10))  # o contador local esta vazio, mas o provedor diz que restam 10
+    assert smoke_llm.main(["--base-url", server.url, "--out-dir", str(tmp_path), "--rpm", "60000", "--timeout", "3"]) == 4
+    assert "restam 10" in capsys.readouterr().err and [r["method"] for r in server.requests] == ["GET"]
+
+
+def test_the_ping_follows_the_last_limit_the_provider_reported(tmp_path, server, capsys):
+    """O ping nao consulta o /key (e UMA requisicao); usa o ultimo limite que o smoke gravou. Sem isso, travaria em 50 numa conta de 1000."""
+    from tools import llm_ping
+    rows = [{"ts": datetime.now(UTC).isoformat(), "kind": "remote_quota", "phase": "before", "used": 1, "limit": 1000, "remaining": 999}]
+    seed_requests(tmp_path, 60, extra=rows)
+    assert llm_ping.main(["--base-url", server.url, "--out-dir", str(tmp_path), "--timeout", "3"]) == 0
+    assert "60/1000 usadas (contagem local; limite: ultimo limite informado pelo provedor)" in capsys.readouterr().out
+
+
+def test_the_ping_without_a_known_provider_limit_keeps_the_default_of_50(tmp_path, server, capsys):
+    from tools import llm_ping
+    seed_requests(tmp_path, 50)
+    assert llm_ping.main(["--base-url", server.url, "--out-dir", str(tmp_path), "--timeout", "3"]) == 4 and server.requests == []
+    assert "50/50 usadas (contagem local; limite: padrao)" in capsys.readouterr().out

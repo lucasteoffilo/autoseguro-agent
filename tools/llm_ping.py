@@ -48,7 +48,7 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--model", default=None, help="sobrescreve LLM_MODEL")
     ap.add_argument("--base-url", default=None, help="sobrescreve LLM_BASE_URL (usado nos testes, com um servidor local)")
     ap.add_argument("--timeout", type=float, default=30.0, help="prazo da chamada (mede a latencia; o orcamento do produto e 6s)")
-    ap.add_argument("--daily-quota", type=int, default=smoke_llm.FREE_DAILY_LIMIT)
+    ap.add_argument("--daily-quota", type=int, default=None, help="forca o limite diario local; sem isto, o ultimo limite que o provedor informou (gravado pelo smoke)")
     ap.add_argument("--out-dir", type=Path, default=ROOT / "var" / "smoke", help="onde fica quota.jsonl (o mesmo do smoke)")
     a = ap.parse_args(argv)
 
@@ -75,9 +75,12 @@ def main(argv: list[str] | None = None) -> int:
         return 2
 
     free = cfg.model.endswith(":free")
-    quota = QuotaLog(a.out_dir / "quota.jsonl", a.daily_quota if free else 10**9)
+    known = QuotaLog(a.out_dir / "quota.jsonl", 1).last_remote_limit()  # o ping nao consulta o /key (e UMA requisicao); usa o que o smoke gravou
+    limit, limit_src = (a.daily_quota, "--daily-quota") if a.daily_quota is not None else (
+        (known, "ultimo limite informado pelo provedor") if known else (smoke_llm.FREE_DAILY_LIMIT, "padrao"))
+    quota = QuotaLog(a.out_dir / "quota.jsonl", limit if free else 10**9)
     if free:
-        print(f"cota hoje (UTC): {quota.used_today()}/{quota.daily_limit} usadas (contagem local)")
+        print(f"cota hoje (UTC): {quota.used_today()}/{quota.daily_limit} usadas (contagem local; limite: {limit_src})")
         if quota.remaining() < 1:
             print("ABORTADO: nao ha requisicao disponivel hoje. Nada foi enviado.", file=sys.stderr)
             return 4

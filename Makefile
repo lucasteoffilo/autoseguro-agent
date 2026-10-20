@@ -38,7 +38,7 @@ api-test-down:
 llm-ping: ## preflight de 1 requisicao real: autenticacao, pedido aceito (json_schema + require_parameters), saida valida e latencia da amostra. Rode antes do smoke-llm
 	$(BIN)/python tools/llm_ping.py $(ARGS)
 
-smoke-llm: ## mede o LLM real: 15 mensagens escritas a mao, sem PII, 1 modelo, 2 repeticoes = 31 de 50 requisicoes/dia do free tier (LLM_API_KEY ou OPENROUTER_API_KEY em .env)
+smoke-llm: ## mede o LLM real: 15 mensagens escritas a mao, sem PII, 1 modelo, 2 repeticoes = 31 requisicoes, dentro do limite diario que o provedor informa (LLM_API_KEY ou OPENROUTER_API_KEY em .env)
 	$(BIN)/python tools/smoke_llm.py $(ARGS)
 
 smoke-llm-anthropic: ## o mesmo smoke pela API direta da Anthropic (ClaudeLLM). Opcional: instala o SDK e precisa de LLM_PROVIDER=anthropic + ANTHROPIC_API_KEY

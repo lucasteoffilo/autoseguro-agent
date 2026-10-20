@@ -44,6 +44,7 @@ class FakeServer:
         self.default: tuple[int, dict, object] = (200, {}, {})
         self.delay = 0.0
         self._queue: list[tuple[int, dict, object]] = []
+        self._routes: dict[tuple[str, str], list[tuple[int, dict, object]]] = {}  # (metodo, caminho) -> respostas na ordem; vence a fila geral
         srv = self
 
         class Handler(BaseHTTPRequestHandler):
@@ -55,7 +56,8 @@ class FakeServer:
                     body = None
                 srv.requests.append({"method": method, "path": self.path, "headers": {k.lower(): v for k, v in self.headers.items()}, "body": body})
                 time.sleep(srv.delay)
-                status, headers, payload = srv._queue.pop(0) if srv._queue else srv.default
+                routed = srv._routes.get((method, self.path))
+                status, headers, payload = routed.pop(0) if routed else (srv._queue.pop(0) if srv._queue else srv.default)
                 data = payload if isinstance(payload, bytes) else json.dumps(payload).encode()
                 try:
                     self.send_response(status)
@@ -86,6 +88,10 @@ class FakeServer:
 
     def queue(self, status: int, payload: object, headers: dict | None = None) -> None:
         self._queue.append((status, headers or {}, payload))
+
+    def route(self, method: str, path: str, status: int, payload: object, headers: dict | None = None) -> None:
+        """Resposta especifica de (metodo, caminho), consumida em ordem. Serve para o GET /key, chamado antes e depois do smoke."""
+        self._routes.setdefault((method, path), []).append((status, headers or {}, payload))
 
     def close(self) -> None:
         self.server.shutdown()

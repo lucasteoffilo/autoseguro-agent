@@ -8,8 +8,8 @@ from pathlib import Path
 import pytest
 
 from autoseguro.llm.base import LLMResult
-from autoseguro.llm.throttle import (ProtocolError, QuotaExhausted, QuotaLog, RateLimiter, ServiceUnstable, ThrottledLLM, is_backoff_status,
-                                     is_protocol_error)
+from autoseguro.llm.throttle import (SANE_DAILY_LIMIT_MAX, ProtocolError, QuotaExhausted, QuotaLog, RateLimiter, RemoteQuota, ServiceUnstable,
+                                     ThrottledLLM, is_backoff_status, is_protocol_error, parse_remote_quota)
 
 
 class VClock:
@@ -325,3 +325,45 @@ def test_classification_helpers():
     assert [is_protocol_error(http(s)) for s in (400, 401, 403, 404, 408, 429, 500)] == [True, True, True, True, False, False, False]
     assert [is_backoff_status(http(s)) for s in (400, 404, 408, 429, 500, 503)] == [False, False, True, True, True, True]
     assert not is_protocol_error(LLMResult(None, "timeout", 1.0, None, None)) and not is_protocol_error(ok())
+
+
+# --- cota que o PROVEDOR informa (GET /key) -------------------------------------------------------------------------------------------------------
+@pytest.mark.parametrize("data", [{"used": 1, "limit": 1000, "remaining": 999}, {"used": 0, "limit": 50, "remaining": 50}, {"used": 50, "limit": 50, "remaining": 0},
+                                  {"used": 1, "limit": SANE_DAILY_LIMIT_MAX, "remaining": SANE_DAILY_LIMIT_MAX - 1}])
+def test_a_well_formed_remote_quota_is_accepted(data):
+    q, why = parse_remote_quota(data)
+    assert q == RemoteQuota(data["used"], data["limit"], data["remaining"]) and why == ""
+
+
+@pytest.mark.parametrize("data", [None, "x", [], {}, {"used": 1, "limit": 50}, {"used": 1, "limit": 50, "remaining": None},
+                                  {"used": 1.5, "limit": 50, "remaining": 49}, {"used": True, "limit": 50, "remaining": 49},
+                                  {"used": 1, "limit": "50", "remaining": 49}, {"used": 1, "limit": 0, "remaining": 0}, {"used": 1, "limit": -5, "remaining": 0},
+                                  {"used": 1, "limit": SANE_DAILY_LIMIT_MAX + 1, "remaining": 5}, {"used": 1, "limit": 10**12, "remaining": 5},
+                                  {"used": -1, "limit": 50, "remaining": 49}, {"used": 1, "limit": 50, "remaining": -1}, {"used": 1, "limit": 50, "remaining": 51}])
+def test_a_missing_malformed_or_absurd_remote_quota_is_refused_with_a_reason(data):
+    q, why = parse_remote_quota(data)
+    assert q is None and why
+
+
+def test_remote_quota_rows_do_not_count_as_requests_and_hold_only_numbers(tmp_path):
+    q = QuotaLog(tmp_path / "q.jsonl", 50, now=Wall(datetime(2026, 10, 20, 12, tzinfo=UTC)))
+    q.record_request("openrouter", "m:free", "ok", 200)
+    q.record_remote("before", RemoteQuota(1, 1000, 999))
+    assert q.used_today() == 1 and q.remaining() == 49
+    row = [json.loads(line) for line in (tmp_path / "q.jsonl").read_text().splitlines()][1]
+    assert set(row) == {"ts", "kind", "phase", "used", "limit", "remaining"} and row["kind"] == "remote_quota"
+
+
+def test_the_last_valid_remote_limit_is_remembered_across_days_and_absurd_rows_are_ignored(tmp_path):
+    path = tmp_path / "q.jsonl"
+    wall = Wall(datetime(2026, 10, 20, 12, tzinfo=UTC))
+    q = QuotaLog(path, 50, now=wall)
+    assert q.last_remote_limit() is None
+    q.record_remote("before", RemoteQuota(1, 1000, 999))
+    wall.at += timedelta(days=1)
+    with path.open("a") as fh:
+        fh.write(json.dumps({"ts": wall.at.isoformat(), "kind": "remote_quota", "phase": "before", "used": 1, "limit": 10**9, "remaining": 5}) + "\n")
+        fh.write("nao e json\n")
+    assert QuotaLog(path, 50, now=wall).last_remote_limit() == 1000, "o ultimo VALIDO: a linha absurda e a corrompida nao contam"
+    q.record_remote("after", RemoteQuota(40, 50, 10))
+    assert QuotaLog(path, 50, now=wall).last_remote_limit() == 50, "a conta pode voltar ao limite menor: vale o mais recente"

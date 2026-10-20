@@ -4,9 +4,10 @@
     make smoke-llm                 # le LLM_* do ambiente ou de .env (ignorado pelo git); padrao: OpenRouter, modelo gratuito
     make smoke-llm-dry             # encanamento completo com um LLM de mentira, sem chave e sem rede
 
-Cabe no free tier do OpenRouter (20 req/min, 50 req/dia sem creditos): 1 modelo, 2 repeticoes = 1 aquecimento + 15 x 2 = 31 requisicoes.
-Respeita o rpm, conta CADA requisicao (inclusive as que falham) em var/smoke/quota.jsonl, confere a cota real em GET /key, trata 429 com
-backoff e para se o limite for DIARIO. Aborta ANTES de gastar se a cota nao cobre o plano.
+Cabe no free tier do OpenRouter (20 req/min; 50 req/dia abaixo de 10 creditos comprados, 1000 a partir de 10): 1 modelo, 2 repeticoes = 31 requisicoes.
+O limite diario local SEGUE o que o provedor informa em GET /key (50 de fallback se faltar ou vier absurdo). Respeita o rpm, conta CADA requisicao
+(inclusive as que falham) em var/smoke/quota.jsonl, grava used/limit/remaining do provedor ANTES e DEPOIS, trata 429 com backoff e para se o
+limite for DIARIO. Aborta ANTES de gastar se o menor entre o contador local e o `remaining` do provedor nao cobre o plano.
 
 FALHA RAPIDO: nao sabemos se requisicao que falha conta na cota, entao o primeiro erro de PROTOCOLO (400, 401, 402, 403, 404... qualquer 4xx
 menos 408 e 429) aborta na hora e custa UMA requisicao, nao 31. So o 429 por minuto e as falhas do servico (408, 5xx) entram em backoff; se
@@ -31,7 +32,7 @@ import re
 import sys
 import urllib.error
 import urllib.request
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from urllib.parse import urlparse
@@ -54,7 +55,8 @@ from autoseguro.llm.prompt import build_system_prompt, build_user_message  # noq
 from autoseguro.llm.redact import redact  # noqa: E402
 from autoseguro.llm.schema import SlotValue, TurnOutput  # noqa: E402
 from autoseguro.templates import RISK_INTENTS, Reply, select_reply  # noqa: E402
-from autoseguro.llm.throttle import ProtocolError, QuotaExhausted, QuotaLog, RateLimiter, ServiceUnstable, ThrottledLLM  # noqa: E402
+from autoseguro.llm.throttle import (ProtocolError, QuotaExhausted, QuotaLog, RateLimiter, RemoteQuota, ServiceUnstable, ThrottledLLM,  # noqa: E402
+                                     parse_remote_quota)
 from tools.smoke_messages import MESSAGES, SMOKE_TODAY, SmokeMessage  # noqa: E402
 
 MODEL_PRICE_KEY = {"claude-haiku-5-5": "haiku-5-5", "claude-sonnet-5-5": "sonnet-5-5", "claude-opus-5-5": "opus-5-5"}
@@ -321,18 +323,42 @@ def print_report(summaries: list[dict], dry: bool) -> None:
         print(f"  VEREDITO: {'PASSA' if s['passes'] else 'NAO PASSA'}   (15 mensagens: alarme, nao benchmark)")
 
 
-def remote_free_remaining(cfg: LLMConfig, timeout_s: float = 10.0) -> int | None:
-    """Cota REAL do dia segundo o OpenRouter (GET /key -> data.free_model_daily_requests.remaining). None se nao deu para saber."""
+def fetch_remote_quota(cfg: LLMConfig, timeout_s: float = 10.0) -> tuple[RemoteQuota | None, str]:
+    """A cota REAL segundo o OpenRouter (GET /key -> data.free_model_daily_requests: used, limit, remaining). Devolve (cota, "") ou (None, por_que_nao).
+    Consulta de metadados: nao e uma chamada de completion. Campo ausente ou valor absurdo = None, e o limite local volta ao padrao."""
     if cfg.provider != "openrouter" or not cfg.base_url or not cfg.api_key:
-        return None
+        return None, "sem consulta (o provedor nao e o OpenRouter, ou nao ha chave)"
     req = urllib.request.Request(cfg.base_url.rstrip("/") + "/key", headers={"Authorization": f"Bearer {cfg.api_key}", "Accept": "application/json"})
     try:
         with urllib.request.urlopen(req, timeout=timeout_s) as r:  # noqa: S310 - URL validada na configuracao
             data = json.loads(r.read()).get("data", {})
-        remaining = data.get("free_model_daily_requests", {}).get("remaining")
-        return remaining if isinstance(remaining, int) and not isinstance(remaining, bool) else None
     except (urllib.error.URLError, OSError, ValueError, AttributeError):
-        return None
+        return None, "GET /key falhou"
+    return parse_remote_quota(data.get("free_model_daily_requests") if isinstance(data, dict) else None)
+
+
+def _describe(q: RemoteQuota | None, why: str = "") -> str:
+    return f"usou {q.used} de {q.limit}, restam {q.remaining}" if q else f"sem leitura ({why or 'nao consultado'})"
+
+
+def _finish_remote(cfg: LLMConfig, quota: QuotaLog, before: RemoteQuota | None, requests: int | None, *, out=None) -> dict:
+    """Le a cota de novo DEPOIS da execucao, grava e mostra o descompasso: quantas das requisicoes que ENVIAMOS o provedor CONTOU. E o que torna
+    observavel o que a documentacao nao diz (requisicao que falha conta? o contador atrasa?)."""
+    out = out or sys.stdout
+    after, why = fetch_remote_quota(cfg) if before else (None, "")
+    if after:
+        quota.record_remote("after", after)
+    counted = after.used - before.used if before and after else None
+    summary = {"before": asdict(before) if before else None, "after": asdict(after) if after else None, "requests_sent": requests,
+               "provider_counted": counted, "unexplained": (requests - counted) if counted is not None and requests is not None else None}
+    if before:
+        line = f"cota do provedor depois: {_describe(after, why)}"
+        if counted is not None and requests is not None:
+            line += f" | o provedor contou {counted} das {requests} requisicoes enviadas"
+            if counted != requests:
+                line += f" (descompasso de {requests - counted}: a documentacao nao diz se falha conta nem se o contador atrasa)"
+        print(line, file=out)
+    return summary
 
 
 def _report_abort(kind: str, res: LLMResult, cfg: LLMConfig, key: str | None, done: int, planned: int, throttled: ThrottledLLM | None,
@@ -356,7 +382,8 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--repeats", type=int, default=2)
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--rpm", type=int, default=FREE_RPM, help="requisicoes por minuto (padrao: o limite do free tier)")
-    ap.add_argument("--daily-quota", type=int, default=FREE_DAILY_LIMIT, help="requisicoes por dia UTC, so para modelos :free")
+    ap.add_argument("--daily-quota", type=int, default=None,
+                    help=f"forca o limite diario local (UTC, so modelos :free). Sem isto o limite e o que o provedor informa em GET /key; {FREE_DAILY_LIMIT} se nao informar")
     ap.add_argument("--max-retries", type=int, default=3, help="tentativas extras ao receber 429 por minuto")
     ap.add_argument("--backoff-base-s", type=float, default=5.0, help="espera base do backoff de 429 e 5xx (dobra a cada tentativa)")
     ap.add_argument("--max-consecutive-failures", type=int, default=3,
@@ -388,7 +415,14 @@ def main(argv: list[str] | None = None) -> int:
 
     messages, planned = MESSAGES, 1 + len(MESSAGES) * a.repeats
     free = cfg.model.endswith(":free")
-    quota = QuotaLog(a.out_dir / "quota.jsonl", a.daily_quota if free else 10**9)
+    remote_before, remote_why = (fetch_remote_quota(cfg) if free and not a.dry_run and not a.no_remote_check else (None, "consulta desligada ou dry-run"))
+    if a.daily_quota is not None:
+        local_limit, limit_src = a.daily_quota, "--daily-quota"
+    elif remote_before:
+        local_limit, limit_src = remote_before.limit, "provedor"
+    else:
+        local_limit, limit_src = FREE_DAILY_LIMIT, f"padrao; provedor: {remote_why}"
+    quota = QuotaLog(a.out_dir / "quota.jsonl", local_limit if free else 10**9)
     throttled: ThrottledLLM | None = None
     done = 0  # chamadas concluidas; se algo abortar, a chamada que falhou e done + 1
     print(f"provedor: {cfg.provider} | modelo: {cfg.model} | saida estruturada: {cfg.structured_output} | raciocinio: {cfg.reasoning_effort or 'nao enviado'}")
@@ -397,9 +431,10 @@ def main(argv: list[str] | None = None) -> int:
             llm = GuardedLLM(DryRunLLM(cfg.model, base), base)
         else:
             if free:
-                remote = None if a.no_remote_check else remote_free_remaining(cfg)
-                available = min(x for x in (quota.remaining(), remote) if x is not None)
-                print(f"cota hoje (UTC): local {quota.used_today()}/{quota.daily_limit} usadas | OpenRouter diz restar {remote if remote is not None else 'desconhecido'}")
+                available = min(x for x in (quota.remaining(), remote_before.remaining if remote_before else None) if x is not None)
+                print(f"cota hoje (UTC): local {quota.used_today()}/{quota.daily_limit} usadas (limite: {limit_src}) | provedor: {_describe(remote_before, remote_why)}")
+                if remote_before:
+                    quota.record_remote("before", remote_before)
                 if available < planned:
                     print(f"ABORTADO: o plano precisa de {planned} requisicoes e restam {available}. Nada foi enviado.", file=sys.stderr)
                     return 4
@@ -426,12 +461,15 @@ def main(argv: list[str] | None = None) -> int:
         return 3
     except ProtocolError as exc:
         _report_abort("erro de protocolo", exc.result, cfg, key, done, planned, throttled, quota, free, fast=True)
+        _finish_remote(cfg, quota, remote_before, throttled.requests if throttled else None, out=sys.stderr)
         return 6
     except ServiceUnstable as exc:
         _report_abort(f"servico instavel ({exc.failures} falhas seguidas)", exc.result, cfg, key, done, planned, throttled, quota, free, fast=False)
+        _finish_remote(cfg, quota, remote_before, throttled.requests if throttled else None, out=sys.stderr)
         return 7
     except QuotaExhausted as exc:
         print(f"ABORTADO: {redact(str(exc), [key])}. As chamadas feitas ate aqui ficam em {a.out_dir / 'quota.jsonl'}", file=sys.stderr)
+        _finish_remote(cfg, quota, remote_before, throttled.requests if throttled else None, out=sys.stderr)
         return 4
     except ConfigError as exc:
         print(f"CONFIGURACAO INVALIDA: {redact(str(exc), [key])}", file=sys.stderr)
@@ -445,6 +483,7 @@ def main(argv: list[str] | None = None) -> int:
     requests = throttled.requests if throttled else None
     if throttled:
         print(f"\nrequisicoes enviadas nesta execucao: {requests} (retries por 429: {throttled.retries}) | hoje: {quota.used_today()}/{quota.daily_limit}")
+    remote_summary = _finish_remote(cfg, quota, remote_before, requests) if throttled else None
     a.out_dir.mkdir(parents=True, exist_ok=True)
     stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ") + ("-dry" if a.dry_run else "")
     path = a.out_dir / f"smoke-{stamp}.json"
@@ -454,7 +493,9 @@ def main(argv: list[str] | None = None) -> int:
               "config": {"base_url_host": host, "structured_output": cfg.structured_output, "reasoning_effort": cfg.reasoning_effort,
                          "max_tokens": cfg.max_tokens, "timeout_s": cfg.timeout_s, "temperature": cfg.temperature},
               "requests_sent": requests, "retries_on_429": throttled.retries if throttled else None,
-              "quota": {"limit": quota.daily_limit if free else None, "used_today": quota.used_today() if free else None},
+              "quota": {"limit": quota.daily_limit if free else None, "limit_source": limit_src if free else None,
+                        "used_today": quota.used_today() if free else None},
+              "remote_quota": remote_summary,
               "summary": summary, "calls": [r.__dict__ for r in records]}
     path.write_text(redact(json.dumps(report, ensure_ascii=False, indent=2, default=str), [key]) + "\n", encoding="utf-8")
     shown = path.relative_to(ROOT) if path.is_relative_to(ROOT) else path

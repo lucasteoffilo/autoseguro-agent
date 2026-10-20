@@ -19,10 +19,39 @@ import json
 import time
 from collections import deque
 from collections.abc import Callable
+from dataclasses import dataclass
 from datetime import UTC, date, datetime
 from pathlib import Path
 
 from .base import LLMClient, LLMResult
+
+
+# O limite diario e DO PROVEDOR (GET /key -> free_model_daily_requests.limit: 50 abaixo de 10 creditos comprados, 1000 a partir de 10). Acima
+# deste teto o numero e tratado como absurdo e o limite local volta ao padrao: um campo corrompido nao pode abrir a cota.
+SANE_DAILY_LIMIT_MAX = 10_000
+
+
+@dataclass(frozen=True)
+class RemoteQuota:
+    used: int
+    limit: int
+    remaining: int
+
+
+def parse_remote_quota(data: object) -> tuple[RemoteQuota | None, str]:
+    """`data` = o objeto `free_model_daily_requests` do GET /key. Devolve (cota, "") ou (None, por_que_nao_serve): campo ausente, tipo errado ou
+    valor absurdo. Nunca levanta."""
+    if not isinstance(data, dict):
+        return None, "campo free_model_daily_requests ausente"
+    vals = {k: data.get(k) for k in ("used", "limit", "remaining")}
+    if any(isinstance(v, bool) or not isinstance(v, int) for v in vals.values()):
+        return None, f"campos used/limit/remaining ausentes ou nao inteiros ({sorted(k for k, v in vals.items() if isinstance(v, bool) or not isinstance(v, int))})"
+    used, limit, remaining = vals["used"], vals["limit"], vals["remaining"]
+    if not 1 <= limit <= SANE_DAILY_LIMIT_MAX:
+        return None, f"limit absurdo ({limit})"
+    if used < 0 or remaining < 0 or remaining > limit:
+        return None, f"used/remaining absurdos (used={used}, remaining={remaining}, limit={limit})"
+    return RemoteQuota(used, limit, remaining), ""
 
 
 class QuotaExhausted(RuntimeError):
@@ -130,6 +159,25 @@ class QuotaLog:
 
     def mark_exhausted(self, provider: str, model: str) -> None:
         self._append({"kind": "daily_limit_hit", "provider": provider, "model": model})
+
+    def record_remote(self, phase: str, quota: RemoteQuota) -> None:
+        """O que o PROVEDOR informou (so numeros): antes e depois de uma execucao, para o descompasso com a contagem local ficar observavel."""
+        self._append({"kind": "remote_quota", "phase": phase, "used": quota.used, "limit": quota.limit, "remaining": quota.remaining})
+
+    def last_remote_limit(self) -> int | None:
+        """O ultimo `limit` valido que o provedor informou (de qualquer dia: o limite e da conta, nao do dia). Para quem nao consulta o /key (o ping)."""
+        if not self.path.exists():
+            return None
+        found = None
+        for line in self.path.read_text(encoding="utf-8").splitlines():
+            try:
+                row = json.loads(line)
+            except ValueError:
+                continue
+            if isinstance(row, dict) and row.get("kind") == "remote_quota":
+                q, _ = parse_remote_quota({"used": row.get("used"), "limit": row.get("limit"), "remaining": row.get("remaining")})
+                found = q.limit if q else found
+        return found
 
 
 class ThrottledLLM:
