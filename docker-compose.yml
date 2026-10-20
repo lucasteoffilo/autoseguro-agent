@@ -1,0 +1,19 @@
+# Baseado no docker-compose.yml do desafio (ver NOTICE.md). Acrescenta tag de imagem e healthcheck.
+services:
+  quote-api:
+    build: ./vendor/quote-service
+    image: autoseguro-quote-api:local
+    ports:
+      - "8000:8000"
+    environment:
+      # instabilidade simulada (de proposito) -- valores padrao do desafio
+      QUOTE_FAILURE_RATE: "0.20"
+      QUOTE_SLOW_RATE: "0.10"
+      QUOTE_SLOW_SECONDS: "8"
+      # QUOTE_SEED: "42"   # descomente p/ falhas reproduziveis
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=2)"]
+      interval: 3s
+      timeout: 3s
+      retries: 15
+    restart: unless-stopped

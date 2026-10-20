@@ -1,0 +1,18 @@
+# API deterministica para testes de integracao e de contrato: sem falha e sem lentidao.
+# Projeto e porta proprios (8100) para coexistir com a instancia instavel do docker-compose.yml.
+# Cenarios de falha NAO usam esta instancia: usam transporte falso com relogio virtual (ver docs/PLAN.md).
+name: autoseguro-agent-test
+services:
+  quote-api-test:
+    build: ./vendor/quote-service
+    image: autoseguro-quote-api:local
+    ports:
+      - "8100:8000"
+    environment:
+      QUOTE_FAILURE_RATE: "0"
+      QUOTE_SLOW_RATE: "0"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=2)"]
+      interval: 3s
+      timeout: 3s
+      retries: 15
