@@ -26,6 +26,7 @@ _PLAIN_TERMS = {
 }
 _PLAIN = {k: re.compile(v) for k, v in _PLAIN_TERMS.items()}
 _NUMBER_WORDS = {1: "um", 2: "dois", 3: "três", 4: "quatro", 5: "cinco"}
+_NUMBER_WORDS_F = {1: "uma", 2: "duas", 3: "três", 4: "quatro", 5: "cinco"}  # "duas opções", nao "dois opções"
 
 
 def strip_accents(text: str) -> str:
@@ -34,6 +35,32 @@ def strip_accents(text: str) -> str:
 
 def _join(items: list[str]) -> str:
     return items[0] if len(items) == 1 else ", ".join(items[:-1]) + " e " + items[-1]
+
+
+def _necessidades_fact(plans: list) -> Fact:
+    """As opcoes de cobertura que o agente OFERECE ao lead ("so roubo e colisao, ou tambem terceiros e vidros, ou..."), derivadas dos planos.
+
+    Perguntar a necessidade ja e nomear coberturas: o guardrail exige um fato citado para cada termo, e sem este fato a unica coisa citavel
+    seria `plano:<id>`, que AFIRMA algo sobre um plano. Este fato autoriza nomear as coberturas e nada mais: nao tem nome de plano.
+    Cada opcao e o que o plano seguinte acrescenta ao anterior (planos ordenados pelo numero de coberturas)."""
+    tiers = sorted(plans, key=lambda p: len(p["coberturas"]))
+    prev: set[str] = set()
+    phrases: list[str] = []
+    terms: set[str] = set()
+    for i, p in enumerate(tiers):
+        cov = list(p["coberturas"])
+        new = [c for c in cov if c not in prev]
+        if i == 0:
+            phrases.append("só " + _join([COVERAGE_LABEL.get(c, c) for c in cov]))
+        elif prev <= set(cov) and new:
+            phrases.append("também " + _join([COVERAGE_LABEL.get(c, c) for c in new]))
+        else:
+            phrases.append(_join([COVERAGE_LABEL.get(c, c) for c in cov]))
+        prev |= set(cov)
+        terms |= set(cov)
+    n = len(phrases)
+    body = phrases[0] if n == 1 else "; ".join(phrases[:-1]) + "; ou " + phrases[-1]
+    return Fact("necessidades", f"A necessidade de cobertura tem {_NUMBER_WORDS_F.get(n, str(n))} {'opção' if n == 1 else 'opções'}: {body}.", frozenset(terms))
 
 
 @dataclass(frozen=True)
@@ -69,6 +96,7 @@ class FactBase:
         n = len(plans)
         facts["planos"] = Fact("planos", f"A AutoSeguro tem {_NUMBER_WORDS.get(n, str(n))} planos: {_join([p['nome'] for p in plans])}.",
                                frozenset(coverages))
+        facts["necessidades"] = _necessidades_fact(plans)
         car = planos["regras"]["carencia"]
         car_cov = list(car["coberturas_com_carencia"])
         labels = _join([COVERAGE_LABEL.get(c, c) for c in car_cov])

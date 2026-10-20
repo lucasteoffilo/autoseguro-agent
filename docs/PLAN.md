@@ -181,6 +181,7 @@ A base de fatos (`FactBase.from_planos`) é derivada do `/planos` e **não cont�
 |---|---|
 | `plano:<id>` (um por plano) | o plano e suas coberturas |
 | `planos` | que existem os três planos |
+| `necessidades` | **nomear** as opções de cobertura ao perguntar a necessidade ("só colisão, roubo e furto; também terceiros e vidros; ou também carro reserva e assistência 24h"), derivadas dos planos; **não** autoriza afirmar o que um plano cobre |
 | `carencia` | roubo e furto, e os "30 dias" |
 | `pro_rata` | primeiro pagamento proporcional |
 | `franquia` | que cada plano tem franquia (sem valor) |
@@ -195,6 +196,7 @@ A base de fatos (`FactBase.from_planos`) é derivada do `/planos` e **não cont�
 | R6 Forma | Vazio, mais de 50 palavras, marcação (`<`, `{`, `[`) |
 | R7 Fatos | id de fato inexistente; **termo** de cobertura, plano, carência ou franquia **sem fato citado**; **cobertura atribuída ao plano errado** (por sentença); **negação** sobre um desses termos |
 
+**Por que existe `necessidades` (smoke de 2026-10-20):** 5 das 6 reprovações eram a pergunta de necessidade ("básica, terceiros e vidros, ou completa?") com `facts_used` vazio. Era uma pergunta verdadeira que o próprio produto manda fazer, e não havia o que citar além de `plano:<id>`, que afirma algo sobre um plano. O R7 continua estrito (a pergunta sem citação ainda reprova, em teste); o prompt agora diz que **nomear** coberturas também exige citar.
 **O que garante:** o texto não carrega dinheiro, prazo, desconto nem garantia; todo número tem origem; todo termo de cobertura vem de um fato que o LLM declarou usar; nenhuma cobertura vai para o plano errado.
 **O que NÃO garante** (registrado em teste): usando só termos autorizados, uma frase **falsa** passa ("roubo e furto valem desde o primeiro dia", com o fato `carencia` citado). Esse resíduo fica com o prompt e com a leitura humana do `smoke-llm`. A regra de negação é conservadora de propósito: "na carência, roubo ainda não vale" é verdadeira, mas cai no template.
 

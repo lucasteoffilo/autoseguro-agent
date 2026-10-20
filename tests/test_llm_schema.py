@@ -144,3 +144,12 @@ def test_the_product_does_not_call_the_fast_path():
     """Nasce desligado: so o smoke-llm (que mede) e os testes o importam."""
     users = [p.relative_to(ROOT).as_posix() for p in (ROOT / "src").rglob("*.py") if "fastpath" in p.read_text(encoding="utf-8") and p.name != "fastpath.py"]
     assert users == []
+
+
+def test_the_system_prompt_tells_the_model_that_asking_the_options_means_citing_necessidades():
+    """Smoke de 2026-10-20: o modelo perguntou "basica, terceiros e vidros, ou completa?" com facts_used vazio, porque o prompt so falava em AFIRMAR."""
+    prompt = build_system_prompt(BASE)
+    assert "[necessidades] A necessidade de cobertura tem três opções" in prompt
+    assert 'NEM NOMEIA' in prompt and 'nesse caso cite o fato "necessidades"' in prompt
+    assert 'Ao perguntar a necessidade de cobertura, use as opções do fato "necessidades" e cite-o em facts_used.' in prompt
+    assert "necessidades" in response_schema(BASE.ids())["properties"]["facts_used"]["items"]["enum"]
