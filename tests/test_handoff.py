@@ -9,7 +9,7 @@ from pathlib import Path
 
 import pytest
 
-from autoseguro.handoff import QUALIFICATION_SLOTS, HandoffReason, HandoffSink, SinkRejected
+from autoseguro.handoff import QUALIFICATION_SLOTS, REASONS_REQUIRING_COMPONENT, HandoffReason, HandoffSink, SinkRejected
 from tests.doubles import InMemorySink, make_package
 from tests.pii_patterns import find_pii
 from tests.sink_contract import SinkContract
@@ -117,6 +117,25 @@ def test_package_is_immutable():
 def test_package_cannot_exist_without_what_was_told_to_the_lead():
     with pytest.raises(ValueError, match="told_to_lead"):
         make_package(told_to_lead="   ")
+
+
+@pytest.mark.parametrize("reason", sorted(REASONS_REQUIRING_COMPONENT))
+def test_failure_reasons_require_the_failed_component(reason):
+    """A causa raiz decide o codigo, mas as DUAS coisas vao no pacote: o motivo e o componente que falhou."""
+    with pytest.raises(ValueError, match="failed_component"):
+        make_package(reason=reason, failed_component=None)
+
+
+def test_decision_reasons_do_not_need_a_component():
+    pkg = make_package("trc_h", HandoffReason.HUMAN_REQUESTED)
+    assert pkg.failed_component is None and pkg.to_dict()["failed_component"] is None
+
+
+def test_llm_failure_before_the_quote_is_safety_guard_with_the_llm_as_component():
+    d = make_package("trc_s", HandoffReason.SAFETY_GUARD).to_dict()
+    assert (d["reason"], d["failed_component"]) == ("SAFETY_GUARD", "llm")
+    d = make_package("trc_q", HandoffReason.QUOTE_UNAVAILABLE).to_dict()
+    assert (d["reason"], d["failed_component"]) == ("QUOTE_UNAVAILABLE", "quote_api")
 
 
 def test_package_requires_timezone():

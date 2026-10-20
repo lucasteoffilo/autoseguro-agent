@@ -48,6 +48,23 @@ class HandoffReason(StrEnum):
     SAFETY_GUARD = "SAFETY_GUARD"
 
 
+class FailedComponent(StrEnum):
+    """Componente que falhou. O MOTIVO e a causa raiz e decide o codigo; o componente diz ONDE olhar. As duas coisas sao logadas."""
+
+    LLM = "llm"
+    GUARDRAIL = "guardrail"
+    QUOTE_API = "quote_api"
+    QUOTE_CLIENT = "quote_client"
+    PRECHECK = "precheck"
+    MASKER = "masker"
+    STORE = "store"
+    SINK = "sink"
+
+
+# Estes motivos descrevem uma FALHA, entao exigem dizer qual componente falhou. Os demais sao decisoes (pedido do lead etc).
+REASONS_REQUIRING_COMPONENT = frozenset({HandoffReason.QUOTE_UNAVAILABLE, HandoffReason.SAFETY_GUARD})
+
+
 @dataclass(frozen=True)
 class QuoteRef:
     """Referencia a ultima cotacao da conversa (o valor so existe quando a API respondeu 200)."""
@@ -78,9 +95,12 @@ class HandoffPackage:
     recent_messages: tuple[MaskedMessage, ...]
     told_to_lead: str  # o texto EXATO enviado ao lead: o humano precisa saber o que foi prometido
     precheck: Literal["ok", "recusa_provavel"] | None = None
+    failed_component: FailedComponent | None = None
     schema_version: int = SCHEMA_VERSION
 
     def __post_init__(self) -> None:
+        if self.reason in REASONS_REQUIRING_COMPONENT and self.failed_component is None:
+            raise ValueError(f"{self.reason.value} exige failed_component: o motivo diz o que houve, o componente diz onde")
         if self.created_at.tzinfo is None:
             raise ValueError("created_at precisa ter fuso horario (UTC)")
         if not self.told_to_lead.strip():
@@ -105,6 +125,7 @@ class HandoffPackage:
             "last_quote": None if q is None else {"quote_id": q.quote_id, "plano_id": q.plano_id,
                                                    "status": q.status, "premio_mensal": q.premio_mensal},
             "precheck": self.precheck,
+            "failed_component": None if self.failed_component is None else self.failed_component.value,
             "recent_messages": [{"role": m.role, "text": m.text, "ts": m.ts.isoformat()} for m in self.recent_messages],
             "told_to_lead": self.told_to_lead,
         }

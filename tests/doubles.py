@@ -4,7 +4,9 @@ from __future__ import annotations
 from datetime import UTC, datetime
 
 from autoseguro.handoff import (
+    REASONS_REQUIRING_COMPONENT,
     DeliveryReceipt,
+    FailedComponent,
     HandoffPackage,
     HandoffReason,
     MaskedMessage,
@@ -27,6 +29,8 @@ def make_package(trace_id: str = "trc_0001", reason: HandoffReason = HandoffReas
         told_to_lead="Nao consegui gerar sua cotacao agora. Vou encaminhar sua conversa a um consultor.",
         precheck="ok",
     )
+    if reason in REASONS_REQUIRING_COMPONENT:  # falha => o pacote diz qual componente falhou
+        base["failed_component"] = FailedComponent.QUOTE_API if reason is HandoffReason.QUOTE_UNAVAILABLE else FailedComponent.LLM
     base.update(over)
     return HandoffPackage(**base)
 
