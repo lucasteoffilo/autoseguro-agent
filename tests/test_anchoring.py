@@ -232,7 +232,9 @@ def test_a_correction_replaces_the_previous_value_and_an_unanchored_reemission_d
 
 
 def test_the_question_for_a_missing_slot_is_the_product_question_and_asks_for_the_model_year():
-    assert "ano do modelo" in questions.ask("veiculo_ano") and "2015/2016" in questions.ask("veiculo_ano")
+    assert questions.ask("veiculo_ano") == "Qual é o ano do modelo do seu carro?", "curta: a dica dos dois anos nao pesa em toda abertura"
+    two = questions.confirm("veiculo_ano", candidates=("2015", "2016"))
+    assert "mais de um ano (modelo 2015 e modelo 2016)" in two and "ano do modelo" in two and questions.YEAR_HINT in two and "2015/2016" in two, "a dica aparece quando o lead MANDOU dois anos"
     need = questions.ask("necessidade", BASE)
     assert need == "O que você quer cobrir? Só colisão, roubo e furto; também danos a terceiros e vidros; ou também carro reserva e assistência 24h?"
 

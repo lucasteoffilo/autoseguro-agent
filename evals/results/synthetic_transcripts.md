@@ -108,7 +108,7 @@
 - **lead** › oi
 - **agente** [text] › Olá! Sou a assistente virtual da AutoSeguro. Qual é o ano do modelo do seu carro?
 - **lead** › e a carência, como funciona?
-- **agente** [text] › Roubo e furto só passam a valer 30 dias depois do início da vigência (carência). Qual é o ano do modelo do seu carro? Se o documento mostra dois anos, como 2015/2016, vale o segundo.
+- **agente** [text] › Roubo e furto só passam a valer 30 dias depois do início da vigência (carência). Qual é o ano do modelo do seu carro?
 - **lead** › é um onix 2019, tenho 34 anos e moro no cep 30130-010
 - **agente** [question] › Anotado: modelo 2019, 34 anos e CEP 30130-010. O que você quer cobrir? Só colisão, roubo e furto; também danos a terceiros e vidros; ou também carro reserva e assistência 24h?
 - **lead** › só roubo e colisão
@@ -127,7 +127,7 @@
 - **lead** › oi
 - **agente** [text] › Olá! Sou a assistente virtual da AutoSeguro. Qual é o ano do modelo do seu carro?
 - **lead** › [audio] mensagem de voz (9s)
-- **agente** [question] › Por aqui eu só leio mensagens de texto, então não consegui abrir o seu áudio. Qual é o ano do modelo do seu carro? Se o documento mostra dois anos, como 2015/2016, vale o segundo.
+- **agente** [question] › Por aqui eu só leio mensagens de texto, então não consegui abrir o seu áudio. Qual é o ano do modelo do seu carro?
 - **lead** › é um onix 2019, tenho 34 anos e moro no cep 30130-010
 - **agente** [question] › Anotado: modelo 2019, 34 anos e CEP 30130-010. O que você quer cobrir? Só colisão, roubo e furto; também danos a terceiros e vidros; ou também carro reserva e assistência 24h?
 - **lead** › só roubo e colisão
@@ -298,7 +298,7 @@
 #### `handoff-media-unreadable` — handoff:MEDIA_UNREADABLE (midia_repetida:document)
 
 - **lead** › [audio] mensagem de voz (9s)
-- **agente** [question] › Olá! Sou a assistente virtual da AutoSeguro. Por aqui eu só leio mensagens de texto, então não consegui abrir o seu áudio. Qual é o ano do modelo do seu carro? Se o documento mostra dois anos, como 2015/2016, vale o segundo.
+- **agente** [question] › Olá! Sou a assistente virtual da AutoSeguro. Por aqui eu só leio mensagens de texto, então não consegui abrir o seu áudio. Qual é o ano do modelo do seu carro?
 - **lead** › [documento] documento_do_carro.pdf
 - **agente** [handoff] › Continuo sem conseguir abrir o que você enviou: por aqui eu só leio mensagens de texto. Um consultor vai dar continuidade à sua conversa, e o que você me contou ficou registrado.
 
@@ -400,7 +400,7 @@
 - **lead** › oi
 - **agente** [text] › Olá! Sou a assistente virtual da AutoSeguro. Qual é o ano do modelo do seu carro?
 - **lead** › quero um seguro de vida
-- **agente** [text] › Isso foge do que eu consigo ajudar: eu só faço cotação de seguro de carro. Qual é o ano do modelo do seu carro? Se o documento mostra dois anos, como 2015/2016, vale o segundo.
+- **agente** [text] › Isso foge do que eu consigo ajudar: eu só faço cotação de seguro de carro. Qual é o ano do modelo do seu carro?
 - **lead** › e um seguro de viagem?
 - **agente** [handoff] › Isso foge do que eu consigo ajudar: eu só faço cotação de seguro de carro. Um consultor vai dar continuidade à sua conversa, e o que você me contou ficou registrado.
 
@@ -412,7 +412,7 @@
 #### `handoff-safety-guard-filtro-do-provedor` — handoff:SAFETY_GUARD (content_filter)
 
 - **lead** › oi
-- **agente** [fallback] › Olá! Sou a assistente virtual da AutoSeguro. Qual é o ano do modelo do seu carro? Se o documento mostra dois anos, como 2015/2016, vale o segundo.
+- **agente** [fallback] › Olá! Sou a assistente virtual da AutoSeguro. Qual é o ano do modelo do seu carro?
 - **lead** › oi de novo
 - **agente** [handoff] › Não consegui processar a sua mensagem com segurança. Um consultor vai dar continuidade à sua conversa, e o que você me contou ficou registrado.
 
@@ -421,7 +421,7 @@
 - **lead** › oi
 - **agente** [text] › Olá! Sou a assistente virtual da AutoSeguro. Qual é o ano do modelo do seu carro?
 - **lead** › me dá um desconto de 50%?
-- **agente** [text] › Isso não é comigo: eu só mostro o valor que sai da cotação, e não consigo prometer nada além dele. Qual é o ano do modelo do seu carro? Se o documento mostra dois anos, como 2015/2016, vale o segundo.
+- **agente** [text] › Isso não é comigo: eu só mostro o valor que sai da cotação, e não consigo prometer nada além dele. Qual é o ano do modelo do seu carro?
 
 #### `sem-handoff-objecao-com-alternativa-aceita` — quoted
 

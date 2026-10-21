@@ -36,13 +36,17 @@ def fmt_value(slot: str, value: str) -> str:
     }.get(slot, value)
 
 
+# A dica dos dois anos so aparece quando o lead MANDOU mais de um ano (confirm, abaixo). Na abertura e nos demais "qual e o ano?" a pergunta e curta: a dica pesava em toda conversa e so serve a quem tem dois anos.
+YEAR_HINT = "Se o documento mostra dois anos, como 2015/2016, vale o segundo."
+
+
 def ask(slot: str, base: FactBase | None = None) -> str:
     """A pergunta do produto para cada dado. A de necessidade sai do fato `necessidades` (as opcoes vem dos planos, nao do codigo)."""
     if slot == "necessidade":
         options = base.facts["necessidades"].text.split(": ", 1)[1].rstrip(".") if base and "necessidades" in base.facts else "só roubo, furto e colisão, ou algo mais completo"
         return f"O que você quer cobrir? {options[0].upper()}{options[1:]}?"
     return {
-        "veiculo_ano": "Qual é o ano do modelo do seu carro? Se o documento mostra dois anos, como 2015/2016, vale o segundo.",
+        "veiculo_ano": "Qual é o ano do modelo do seu carro?",
         "idade": "Qual é a sua idade?",
         "cep": "Qual é o CEP de onde o carro dorme?",
         "data_inicio": "Em que dia você quer que o seguro comece a valer?",
@@ -66,7 +70,7 @@ def confirm(slot: str, *, proposed: str | None = None, candidates: Sequence[str]
     if len(candidates) > 1:
         shown = _join([fmt_value(slot, c) for c in candidates])
         return {
-            "veiculo_ano": f"Você falou de mais de um ano ({shown}). Qual é o ano do modelo do carro?",
+            "veiculo_ano": f"Você falou de mais de um ano ({shown}). Qual é o ano do modelo do carro? {YEAR_HINT}",
             "idade": f"Você falou de mais de uma idade ({shown}). Qual é a sua idade hoje?",
             "cep": f"Você falou de mais de um CEP ({shown}). Qual é o CEP de onde o carro dorme?",
             "data_inicio": f"Você falou de mais de uma data ({shown}). Em que dia o seguro deve começar?",

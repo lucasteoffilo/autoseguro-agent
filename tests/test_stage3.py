@@ -103,7 +103,7 @@ def test_media_without_transcription_is_answered_by_a_request_for_text_and_the_l
     r = h.say("[audio] mensagem de voz (12s)")
     t = r.terminal[0]
     assert t.kind == "question" and t.text == (f"{templates.GREETING} Por aqui eu só leio mensagens de texto, então não consegui abrir o seu áudio. "
-                                              "Qual é o ano do modelo do seu carro? Se o documento mostra dois anos, como 2015/2016, vale o segundo.")
+                                              "Qual é o ano do modelo do seu carro?")
     assert h.llm.calls == [] and json.loads(h.conv["slots"]) == {}, "o 12 de '(12s)' nao e idade de ninguem"
     assert json.loads(h.store.messages(h.trace)[0]["meta"])["media"] == "audio" and h.meta(h.agent[0])["reply_source"] == "template_media"
     assert check_reply(templates.media_request("audio"), facts_used=(), base=BASE, lead_texts=[], author="template") == ()
@@ -328,3 +328,19 @@ def test_the_introduction_is_recorded_in_the_stored_message_not_only_in_what_was
     h = Harness()
     h.say(GREET)
     assert h.agent[0]["text"].startswith(templates.GREETING)
+
+
+# --- abertura curta: a dica dos dois anos so aparece quando o lead mandou dois anos ---------------------------------------------------------------------
+def test_the_opening_is_the_house_introduction_plus_the_short_year_question_with_no_hint():
+    h = Harness()
+    text = h.say(GREET).terminal[0].text
+    assert text == f"{templates.GREETING} Qual é o ano do modelo do seu carro?" and "2015/2016" not in text
+
+
+def test_the_two_years_hint_appears_only_when_the_lead_sent_two_years():
+    h = Harness()
+    h.say(GREET)
+    asked_again = h.say("hm, não sei bem").terminal[0].text
+    assert "2015/2016" not in asked_again, "repetir a pergunta nao traz a dica"
+    two = h.say("o carro tem 2015 e 2016").terminal[0].text
+    assert two.startswith("Você falou de mais de um ano") and questions.YEAR_HINT in two

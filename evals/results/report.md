@@ -1,6 +1,6 @@
 # Relatório dos evals — PASSA
 
-- **Gerado em:** 2026-10-21 19:52 UTC · **relógio dos evals:** 2026-10-21 · **semente da seleção:** 20261021
+- **Gerado em:** 2026-10-21 19:55 UTC · **relógio dos evals:** 2026-10-21 · **semente da seleção:** 20261021
 - **Backend da `/quote` e oráculo:** servico vendorizado em processo (relogio 2026-10-21)
 - **LLM:** `MockLLM` (determinístico) atrás do mesmo `GuardedLLM` e do mesmo orquestrador de produção; nenhuma chamada de rede para LLM.
 
