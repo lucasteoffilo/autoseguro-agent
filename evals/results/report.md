@@ -1,6 +1,6 @@
 # Relatório dos evals — PASSA
 
-- **Gerado em:** 2026-10-21 17:57 UTC · **relógio dos evals:** 2026-10-21 · **semente da seleção:** 20261021
+- **Gerado em:** 2026-10-21 18:59 UTC · **relógio dos evals:** 2026-10-21 · **semente da seleção:** 20261021
 - **Backend da `/quote` e oráculo:** servico vendorizado em processo (relogio 2026-10-21)
 - **LLM:** `MockLLM` (determinístico) atrás do mesmo `GuardedLLM` e do mesmo orquestrador de produção; nenhuma chamada de rede para LLM.
 
@@ -67,7 +67,7 @@ Perfis que a API recusaria e que **não** terminaram em recusa. Não são falhas
 
 ## Conversas derivadas do dataset (população inteira)
 
-- **2500 conversas** reproduzidas (16470 mensagens do lead, 17s). Colunas lidas: `conversation_id`, `message_index`, `sender_role`, `message_type`, `message_body` — nenhuma das que vazam o gabarito.
+- **2500 conversas** reproduzidas (16470 mensagens do lead, 16s). Colunas lidas: `conversation_id`, `message_index`, `sender_role`, `message_type`, `message_body` — nenhuma das que vazam o gabarito.
 - **O harness responde só o que o roteiro do vendedor nunca pergunta:** a cobertura e a data de início, uma vez cada e só quando o agente pergunta (3498 respostas no total). Todo o resto é a fala do próprio lead. Chegaram a uma cotação `ok`: 1749 conversas.
 - Conversas com mídia sem transcrição: 1420 (56.8%) · com PII mascarada: 2500 (100.0%)
 

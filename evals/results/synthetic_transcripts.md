@@ -72,7 +72,7 @@
 #### `cotacao-quatro-dados-numa-mensagem` — quoted
 
 - **lead** › oi, quero cotar: onix 2023, 29 anos, cep 01310-100, começando dia 01/11/2026
-- **agente** [question] › Anotado: modelo 2023, 29 anos, CEP 01310-100 e início em 01/11/2026 (domingo). O que você quer cobrir? Só colisão, roubo e furto; também danos a terceiros e vidros; ou também carro reserva e assistência 24h?
+- **agente** [question] › Olá! Sou a assistente virtual da AutoSeguro. Anotado: modelo 2023, 29 anos, CEP 01310-100 e início em 01/11/2026 (domingo). O que você quer cobrir? Só colisão, roubo e furto; também danos a terceiros e vidros; ou também carro reserva e assistência 24h?
 - **lead** › só roubo e colisão
 - **agente** [quote] › Aqui está a cotação do plano Essencial:
   • Mensalidade: R$ 149,88
@@ -407,12 +407,12 @@
 #### `handoff-safety-guard-llm-fora` — handoff:SAFETY_GUARD (http_503 | falha simulada)
 
 - **lead** › oi
-- **agente** [handoff] › Estou com uma instabilidade e não consigo continuar a conversa agora. Um consultor vai dar continuidade à sua conversa, e o que você me contou ficou registrado.
+- **agente** [handoff] › Olá! Sou a assistente virtual da AutoSeguro. Estou com uma instabilidade e não consigo continuar a conversa agora. Um consultor vai dar continuidade à sua conversa, e o que você me contou ficou registrado.
 
 #### `handoff-safety-guard-filtro-do-provedor` — handoff:SAFETY_GUARD (content_filter)
 
 - **lead** › oi
-- **agente** [fallback] › Qual é o ano do modelo do seu carro? Se o documento mostra dois anos, como 2015/2016, vale o segundo.
+- **agente** [fallback] › Olá! Sou a assistente virtual da AutoSeguro. Qual é o ano do modelo do seu carro? Se o documento mostra dois anos, como 2015/2016, vale o segundo.
 - **lead** › oi de novo
 - **agente** [handoff] › Não consegui processar a sua mensagem com segurança. Um consultor vai dar continuidade à sua conversa, e o que você me contou ficou registrado.
 
