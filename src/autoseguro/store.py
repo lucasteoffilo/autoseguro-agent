@@ -48,7 +48,7 @@ CREATE TABLE IF NOT EXISTS messages (
   status TEXT NOT NULL,                   -- processed (lead) | sent (agente)
   quote_id TEXT REFERENCES quotes(id),    -- a cotacao que esta mensagem exibe
   external_id TEXT,                       -- id da mensagem no canal, para dedupe
-  meta TEXT NOT NULL DEFAULT '{}',        -- JSON: mask_kinds, intent, reply_source, facts_used, violations, usage, llm_error, attempt
+  meta TEXT NOT NULL DEFAULT '{}',        -- JSON: mask_kinds, intent, reply_source, facts_used, violations, blocked_reply, usage, llm_error, attempt
   UNIQUE (trace_id, seq),
   UNIQUE (trace_id, external_id)
 );

@@ -270,7 +270,7 @@ A cada mensagem o LLM devolve `{slots, intent, facts_used, reply}`. **Quem decid
 | Tabela | Pergunta de rastreabilidade |
 |---|---|
 | `conversations` | Como terminou (`quoted`, `refused`, `handoff` + motivo + componente, `open`)? Qual era o estado (slots) e qual pacote foi entregue ao humano? |
-| `messages` | O que foi dito, por quem, em que ordem? Já foi processada (dedupe)? Que cotação exibe? O que o LLM e o guardrail fizeram (`meta`: `usage`, `facts_used`, `reply_source`, violações)? |
+| `messages` | O que foi dito, por quem, em que ordem? Já foi processada (dedupe)? Que cotação exibe? O que o LLM e o guardrail fizeram (`meta`: `usage`, `facts_used`, `reply_source`, violações e, se o guardrail barrou o texto do modelo, o `blocked_reply`: mascarado e truncado em 500 caracteres, ou só a marca `blocked_reply_omitted: pii`)? |
 | `quotes` | Que cotação o lead recebeu, para qual entrada normalizada, com que status e valor? Foi cotação, alternativa ou confirmação da pré-checagem? |
 | `quote_attempts` | Como a `/quote` chegou a esse resultado: tentativas, status HTTP, tempo, por que parou? (Já produzido pelo cliente: `Attempt`.) |
 

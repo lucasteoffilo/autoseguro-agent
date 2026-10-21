@@ -9,6 +9,7 @@ import re
 from collections.abc import Iterable
 
 REDACTED = "[REDACTED]"
+DETAIL_LIMIT = 500   # detalhe de erro do provedor e texto do modelo barrado pelo guardrail: o suficiente para distinguir as causas ou julgar o texto, curto para nao inflar log e banco
 _KNOWN_FORMATS = (
     re.compile(r"sk-or-[A-Za-z0-9_\-]{6,}"),
     re.compile(r"sk-ant-[A-Za-z0-9_\-]{6,}"),

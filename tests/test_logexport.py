@@ -162,7 +162,7 @@ def test_a_normal_conversation_splits_into_model_text_product_questions_and_temp
     assert "**Fração do modelo:** 2 de 4 respostas ao lead (50%); 2 de 2 em que o texto do modelo poderia ter chegado (100%). **Barrados pelo guardrail:** 0 (0% das vezes" in md
 
 
-def test_a_reply_the_guardrail_blocked_is_counted_with_the_rule_that_blocked_it():
+def test_a_reply_the_guardrail_blocked_is_counted_with_the_rule_that_blocked_it_and_its_text_is_exported_for_judging():
     h = Harness(llm=HostileOnTurn(BASE, "Um consultor te liga amanhã com um desconto.", at=0))
     h.say(GREET)
     o = origins_of(h.store.messages(h.trace))
@@ -170,7 +170,81 @@ def test_a_reply_the_guardrail_blocked_is_counted_with_the_rule_that_blocked_it(
     md = export_markdown(h.store, h.trace)
     assert "| Texto do modelo barrado pelo guardrail | 1 | `template_fallback` | R3_prazo_ou_contato ×1" in md
     assert "**Barrados pelo guardrail:** 1 (100% das vezes" in md
-    assert "Um consultor te liga" not in md, "o texto barrado nao e exportado, so a regra"
+    assert "### Textos do modelo barrados pelo guardrail" in md and "Um consultor te liga amanhã com um desconto. Qual é o ano do modelo do seu carro?" in md.split("### Textos do modelo barrados")[1].split("## Transcrição")[0]
+    assert "Um consultor te liga" not in h.agent[0]["text"], "o texto barrado NUNCA vai ao lead: o lead leu o template"
+
+
+def test_the_blocked_text_is_recorded_masked_and_truncated_at_the_same_limit_as_the_error_detail():
+    from autoseguro.llm import openai_compat, redact
+    assert openai_compat.DETAIL_LIMIT is redact.DETAIL_LIMIT == 500, "um limite so, compartilhado"
+    h = Harness(llm=HostileOnTurn(BASE, ("desconto " * 80).strip(), at=0))
+    h.say(GREET)
+    meta = h.meta(h.agent[0])
+    assert meta["reply_source"] == "template_fallback" and len(meta["blocked_reply"]) == 501 and meta["blocked_reply"].endswith("…") and "blocked_reply_omitted" not in meta
+    short = Harness(llm=HostileOnTurn(BASE, "Isso tem desconto.", at=0))
+    short.say(GREET)
+    assert short.meta(short.agent[0])["blocked_reply"] == "Isso tem desconto. Qual é o ano do modelo do seu carro?"
+
+
+def test_an_invented_phone_in_the_blocked_reply_is_masked_and_the_export_neither_has_pii_nor_refuses_the_conversation():
+    phone = V["tel_paren"]
+    h = Harness(llm=HostileOnTurn(BASE, f"Um consultor te liga amanhã no {phone} com um desconto.", at=0))
+    h.say(GREET)
+    meta = h.meta(h.agent[0])
+    assert "[TELEFONE]" in meta["blocked_reply"] and phone not in meta["blocked_reply"] and V["tel_core"] not in meta["blocked_reply"]
+    md = export_markdown(h.store, h.trace)        # nao levanta ExportRefused
+    assert "[TELEFONE]" in md and phone not in md and V["tel_core"] not in md and scan(md) == []
+    assert phone not in h.store.all_text()
+
+
+def test_if_pii_survives_the_masker_only_the_rule_is_recorded_and_the_export_still_works():
+    from autoseguro.masker import Masked, Masker
+
+    class LeakyMasker(Masker):                     # um mascarador que deixa tudo passar: o que sobra e PII de verdade
+        def mask(self, text):
+            return Masked(text, ())
+
+    h = Harness(llm=HostileOnTurn(BASE, f"Um consultor te liga amanhã no {V['tel_plus']} com um desconto.", at=0), masker=LeakyMasker())
+    h.say(GREET)
+    meta = h.meta(h.agent[0])
+    assert meta["blocked_reply_omitted"] == "pii" and "blocked_reply" not in meta and meta["violations"], "a regra continua gravada"
+    assert V["tel_plus"] not in h.store.all_text() and V["tel_core"] not in h.store.all_text()
+    md = export_markdown(h.store, h.trace)        # nao recusa
+    assert "_texto omitido: pii_" in md and scan(md) == [] and "R3_prazo_ou_contato" in md
+
+
+def test_the_export_says_the_blocked_text_only_exists_for_runs_after_the_commit_that_records_it():
+    h = Harness()
+    h.run(GREET)
+    clean = export_markdown(h.store, h.trace)
+    assert "Nenhum destes textos chegou ao lead" in clean and "O texto barrado só existe em execuções feitas depois do commit que o introduziu" in clean and "_Nenhum texto do modelo foi barrado pelo guardrail._" in clean
+    # um banco de ANTES da gravacao: a mensagem barrada so tem a regra
+    import datetime as dt
+    old = Harness()
+    old.store.add_message(old.trace, "msg_old", role="agent", kind="question", text="Qual é o ano do modelo do seu carro?", ts=dt.datetime.now(dt.UTC), status="sent",
+                          meta={"reply_source": "template_fallback", "violations": ["R1_dinheiro"], "intent": "provide_info"})
+    md = export_markdown(old.store, old.trace)
+    assert "| 1 | R1_dinheiro | _não gravado: execução anterior ao commit que grava o texto barrado_ |" in md
+
+
+def test_only_a_guardrail_block_records_a_text_not_a_provider_failure_nor_a_normal_reply():
+    h = Harness(failures=["content_filter", "content_filter"])
+    h.say(GREET)
+    assert "blocked_reply" not in h.meta(h.agent[0]) and "blocked_reply_omitted" not in h.meta(h.agent[0])
+    ok = Harness()
+    ok.say(GREET)
+    assert "blocked_reply" not in ok.meta(ok.agent[0])
+
+
+def test_the_index_lists_the_blocked_texts_of_every_conversation(tmp_path):
+    from tools import export_log
+    db = tmp_path / "run.db"
+    h = Harness(llm=HostileOnTurn(BASE, "Hoje mesmo você já fica coberto.", at=0), store=Store(db))
+    h.say(GREET)
+    out = tmp_path / "logs"
+    assert export_log.main(["--db", str(db), "--trace", "all", "--out", str(out)]) == 0
+    index = (out / "index.md").read_text(encoding="utf-8")
+    assert "### Textos do modelo barrados pelo guardrail (todas as conversas)" in index and f"| `{h.trace}` 2 | " in index and "Hoje mesmo você já fica coberto." in index
 
 
 def test_a_provider_filter_is_not_counted_as_a_guardrail_block_and_neither_is_the_orchestrators_swap():

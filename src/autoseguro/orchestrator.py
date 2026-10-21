@@ -33,7 +33,9 @@ from .handoff import (MAX_RECENT_MESSAGES, FailedComponent, HandoffPackage, Hand
 from .llm.base import LLMResult, outcome_class
 from .llm.guarded import GuardedLLM, GuardedResult, UnsafePayload
 from .llm.prompt import build_user_message
+from .llm.redact import DETAIL_LIMIT, redact
 from .llm.throttle import ProtocolError, QuotaExhausted, ServiceUnstable
+from .logexport import scan
 from .masker import Masker, residual_pii
 from .media import media_kind
 from .precheck import Rules, precheck
@@ -564,7 +566,18 @@ class Orchestrator:
                 text = templates.AFTER_QUOTE
             kind = "fallback" if nq is None else ("confirmation" if nq.kind == "confirm" else "question")
         conv.asked = (nq.slot, nq.kind) if nq else None
-        self._say(t, kind, text, meta=self._meta(t, reply, gres, nq, source=source))
+        meta = self._meta(t, reply, gres, nq, source=source)
+        if source == "template_fallback" and gres.output is not None and gres.violations:    # o guardrail barrou o texto do modelo: grava-o, para julgar falso positivo pelo texto
+            meta.update(self._blocked_text(gres.output.reply))
+        self._say(t, kind, text, meta=meta)
+
+    def _blocked_text(self, reply: str) -> dict[str, str]:
+        """O texto que o guardrail barrou, para o autor julgar se a barragem foi falso positivo. NUNCA vai ao lead. Passa pelo mascarador e e truncado no mesmo limite do detalhe de erro
+        (`DETAIL_LIMIT`, mascarando ANTES de truncar). Se ainda sobrar PII ou segredo, pela varredura que o export usa, grava so a marca `blocked_reply_omitted`: o export nunca recusa a conversa por causa disto."""
+        shown = redact(self._masker.mask(reply).text, limit=DETAIL_LIMIT)
+        if scan(shown) or scan(self._masker.mask(reply).text):
+            return {"blocked_reply_omitted": "pii"}
+        return {"blocked_reply": shown}
 
     def _reply_action(self, t: _Turn, reply: templates.Reply, gres: GuardedResult | None) -> None:
         self._handoff(t, reply.handoff_reason or HandoffReason.OUT_OF_SCOPE, reply.text,

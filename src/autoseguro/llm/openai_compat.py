@@ -27,11 +27,10 @@ from ..facts import FactBase
 from .base import LLMResult, Usage, result_from_text
 from .config import ConfigError, assert_secure_url, is_openrouter_host
 from .prompt import build_system_prompt
-from .redact import redact
+from .redact import DETAIL_LIMIT, redact
 from .schema import response_schema
 
 _DAILY = re.compile(r"(?i)per[- ]day|daily|requests per day")
-_DETAIL_LIMIT = 500  # mensagem + provedor + retorno bruto, ja mascarados; o suficiente para distinguir as causas, curto para nao inflar log
 
 
 class _Timeout(Exception):
@@ -161,7 +160,7 @@ class OpenAICompatLLM:
             if raw not in (None, "", {}, []):
                 text = raw if isinstance(raw, str) else json.dumps(raw, ensure_ascii=False, default=str)
                 parts.append("retorno=" + " ".join(text.split()))
-        return redact(" | ".join(parts), [self._api_key], limit=_DETAIL_LIMIT) or None
+        return redact(" | ".join(parts), [self._api_key], limit=DETAIL_LIMIT) or None
 
     def _interpret(self, status: int, headers: dict[str, str], raw: bytes, latency: float) -> LLMResult:
         try:

@@ -481,7 +481,9 @@ def test_a_neutral_reply_with_money_or_a_promise_is_replaced_by_the_question_and
     r = h.say("oi")
     assert r.terminal[0].text == questions.ask("veiculo_ano") and r.terminal[0].kind == "question"
     m = h.meta(h.agent[0])
-    assert m["reply_source"] == "template_fallback" and m["violations"] and "R$" not in h.store.all_text()
+    assert m["reply_source"] == "template_fallback" and m["violations"]
+    assert "R$" not in " ".join(x["text"] for x in h.store.messages(h.trace)), "nenhuma MENSAGEM tem dinheiro: o texto barrado fica so no meta, para o autor julgar"
+    assert m["blocked_reply"] == "Fica R$ 50 por mês, te ligo amanhã. E o ano do carro?" and h.store.money_not_in_quotes(h.trace) == []
 
 
 def test_a_reply_that_names_coverages_without_citing_a_fact_never_asks_the_necessity_question():

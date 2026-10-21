@@ -1,6 +1,6 @@
 """Exporta o log de UMA execucao (uma conversa, pelo `trace_id`) em Markdown: transcricao, decisoes do agente, cotacoes com todas as tentativas da /quote, slots e o pacote de handoff.
 
-Tudo vem do SQLite, onde so existe texto JA MASCARADO. Mesmo assim o Markdown passa por uma varredura antes de ser escrito (detector de PII do gate de envio, CPF com digitos
+Tudo vem do SQLite, onde so existe texto JA MASCARADO (inclusive o texto do modelo que o guardrail barrou, gravado mascarado e truncado, ou so a marca "texto omitido: pii"). Mesmo assim o Markdown passa por uma varredura antes de ser escrito (detector de PII do gate de envio, CPF com digitos
 verificadores validos, chaves): se achar algo, NAO exporta (`ExportRefused`) e diz o tipo, nunca o trecho. A secao "Verificacoes" repete os criterios E3 do PLAN para o autor saber,
 antes de copiar o log para o README, se esta execucao serve: LLM real registrado, cotacao ok, retry visivel, todo "R$" existe numa cotacao ok, sem PII.
 """
@@ -113,6 +113,36 @@ def origins_of(messages: list[dict[str, Any]]) -> Origins:
     return o
 
 
+BLOCKED_NOTE = ("Nenhum destes textos chegou ao lead: ele leu o template que está na transcrição. O texto barrado só existe em execuções feitas depois do commit que o introduziu (\"grava o texto barrado pelo guardrail\", campo `blocked_reply` do `meta`); em banco anterior só a regra foi "
+                "gravada e a linha diz \"não gravado\". Vem mascarado e truncado em 500 caracteres; se sobrar PII depois de mascarar, só a regra é gravada (\"texto omitido: pii\").")
+
+
+def blocked_rows(messages: list[dict[str, Any]], *, trace: str | None = None) -> list[str]:
+    """Uma linha por texto do modelo que o guardrail barrou: a regra e o texto (ou por que nao ha texto)."""
+    rows = []
+    for m in messages:
+        if m["role"] != "agent" or m["kind"] == "hold":
+            continue
+        meta = json.loads(m["meta"])
+        bucket, rules = classify_reply(meta)
+        if bucket != "barrado":
+            continue
+        if "blocked_reply" in meta:
+            text = _cell(meta["blocked_reply"])
+        elif meta.get("blocked_reply_omitted"):
+            text = f"_texto omitido: {meta['blocked_reply_omitted']}_"
+        else:
+            text = "_não gravado: execução anterior ao commit que grava o texto barrado_"
+        rows.append(f"| {(f'`{trace}` ' if trace else '')}{m['seq']} | {', '.join(rules)} | {text} |")
+    return rows
+
+
+def blocked_lines(messages: list[dict[str, Any]], *, trace: str | None = None) -> list[str]:
+    rows = blocked_rows(messages, trace=trace)
+    head = ["| " + ("Conversa " if trace else "") + "# | Regras | Texto do modelo barrado |", "|" + ("---|" if trace else "") + "---|---|---|"]
+    return [f"> {BLOCKED_NOTE}", ""] + (head + rows if rows else ["_Nenhum texto do modelo foi barrado pelo guardrail._"])
+
+
 def _pct(n: int, d: int) -> str:
     return "—" if d == 0 else f"{100 * n / d:.0f}%"
 
@@ -147,7 +177,7 @@ def export_markdown(store: Store, trace_id: str) -> str:
            f"| Existe falha seguida de retry visível | {'sim: ' + str(len(retries)) + ' tentativa(s) com decisão `retry`' if retries else '**não** (use uma semente/API que falhe antes de acertar)'} |",
            f"| Todo `R$` dito pelo agente existe numa cotação `ok` desta conversa | {'sim (' + str(len(agent_money)) + ' valor(es))' if not unbacked else '**NÃO**: ' + ', '.join(unbacked)} |",
            "| Sem PII nem segredo no texto exportado | (conferido ao final: a exportação é recusada se houver) |", "",
-           "## De onde veio cada texto que o lead leu", "", *origin_lines(origins_of(msgs)), "",
+           "## De onde veio cada texto que o lead leu", "", *origin_lines(origins_of(msgs)), "", "### Textos do modelo barrados pelo guardrail", "", *blocked_lines(msgs), "",
            "## Transcrição", "", "| # | Quando (UTC) | Quem | Tipo | Texto (já mascarado) |", "|---|---|---|---|---|"]
     for m in msgs:
         out.append(f"| {m['seq']} | {m['ts'][11:23]} | {'lead' if m['role'] == 'lead' else 'agente'} | {m['kind']} | {_cell(m['text'])} |")
@@ -192,6 +222,7 @@ def index_markdown(store: Store, traces: list[str], *, files: dict[str, str] | N
     rows = ["# Conversas exportadas", "", "| Conversa | Desfecho | Motivo / componente | LLM | Cotacoes (ok/recusa/fora) | Retries da /quote | Mensagens | Texto do modelo / respostas | Barrados | Arquivo |",
             "|---|---|---|---|---|---|---|---|---|---|"]
     total = Origins()
+    blocked: list[str] = []
     for t in traces:
         rec = store.reconstruct(t)
         c, qs = rec["conversation"], rec["quotes"]
@@ -200,9 +231,12 @@ def index_markdown(store: Store, traces: list[str], *, files: dict[str, str] | N
         retries = sum(1 for q in qs for a in q["attempts"] if a["decision"] == "retry")
         o = origins_of(rec["messages"])
         total += o
+        blocked += blocked_rows(rec["messages"], trace=t)
         rows.append(f"| `{t}` | {c['status']} | {reason} | {c['llm_provider']}/{c['llm_model']} | {status['ok']}/{status['refused']}/{status['unavailable']} | {retries} | {len(rec['messages'])} | "
                     f"{o.counts['llm']}/{o.total} | {o.counts['barrado']} | {('[' + files[t] + '](' + files[t] + ')') if files and t in files else '—'} |")
-    rows += ["", f"## Total das {len(traces)} conversas: de onde veio cada texto que o lead leu", "", *origin_lines(total)]
+    rows += ["", f"## Total das {len(traces)} conversas: de onde veio cada texto que o lead leu", "", *origin_lines(total), "",
+             "### Textos do modelo barrados pelo guardrail (todas as conversas)", "", f"> {BLOCKED_NOTE}", ""]
+    rows += (["| Conversa # | Regras | Texto do modelo barrado |", "|---|---|---|", *blocked] if blocked else ["_Nenhum texto do modelo foi barrado pelo guardrail._"])
     text = "\n".join(rows) + "\n"
     found = scan(text)
     if found:
