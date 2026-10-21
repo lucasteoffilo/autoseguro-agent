@@ -9,12 +9,11 @@ import pytest
 
 ROOT = Path(__file__).resolve().parent.parent
 
-# Arquivos que podem conter PII *de proposito* (amostras sinteticas para testar o mascarador).
-# Qualquer outro caminho com PII reprova a higiene do repo.
-PII_ALLOWLIST_PREFIXES = ("tests/fixtures/pii_samples/",)
+# Nenhum caminho do repo pode conter PII, nem de proposito: as amostras sinteticas dos testes sao montadas em tempo de execucao (tests/synthetic_pii.py).
 # Nao sao texto nosso: lockfile do servico vendorizado.
 SCAN_SKIP = ("vendor/quote-service/uv.lock",)
 _FALLBACK_SKIP_DIRS = {".git", ".venv", "venv", "__pycache__", ".pytest_cache", "var", "node_modules"}
+_FALLBACK_SKIP_SUFFIXES = (".egg-info",)
 
 
 def _repo_files() -> list[Path]:
@@ -24,7 +23,9 @@ def _repo_files() -> list[Path]:
                              cwd=ROOT, capture_output=True, check=True).stdout.decode()
         paths = [ROOT / p for p in out.split("\0") if p]
     except (subprocess.CalledProcessError, FileNotFoundError):
-        paths = [p for p in ROOT.rglob("*") if not _FALLBACK_SKIP_DIRS & set(p.relative_to(ROOT).parts)]
+        # sem git (um zip, um `git archive` extraido): tudo, menos o que a instalacao e a execucao geram
+        paths = [p for p in ROOT.rglob("*") if not _FALLBACK_SKIP_DIRS & set(p.relative_to(ROOT).parts)
+                 and not any(part.endswith(_FALLBACK_SKIP_SUFFIXES) for part in p.relative_to(ROOT).parts)]
     return [p for p in paths if p.is_file()]
 
 
@@ -40,11 +41,11 @@ def _isolate_llm_credentials(monkeypatch):
 
 @pytest.fixture(scope="session")
 def repo_text_files() -> list[tuple[str, str]]:
-    """(caminho relativo, texto) de todo arquivo de texto do repo, exceto allowlist e lockfiles."""
+    """(caminho relativo, texto) de todo arquivo de texto do repo, exceto lockfiles. Sem allowlist de PII."""
     files = []
     for p in _repo_files():
         rel = p.relative_to(ROOT).as_posix()
-        if rel.startswith(PII_ALLOWLIST_PREFIXES) or rel in SCAN_SKIP:
+        if rel in SCAN_SKIP:
             continue
         try:
             files.append((rel, p.read_text(encoding="utf-8")))
@@ -59,6 +60,6 @@ def dataset_bodies() -> list[str]:
     path = os.getenv("DATASET_PATH")
     if not path or not Path(path).exists():
         pytest.skip("DATASET_PATH ausente: checagem contra linhas cruas do dataset pulada")
-    pd = pytest.importorskip("pandas")
+    pd = pytest.importorskip("pandas", reason="extra opcional ausente (pip install -e '.[analysis]')")
     df = pd.read_parquet(path, columns=["message_body"])
     return sorted({b.strip().lower() for b in df.message_body if len(b.strip()) >= 12})

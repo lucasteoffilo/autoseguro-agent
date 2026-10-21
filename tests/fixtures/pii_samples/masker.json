@@ -1,0 +1,107 @@
+{
+  "_what": "MODELOS de casos para testar o mascarador. Os valores de PII (CPF, telefone, e-mail, placa...) NAO estao aqui: sao sinteticos e montados em tempo de execucao por tests/synthetic_pii.py. Este arquivo so tem {marcadores}, e por isso o scanner de higiene do repo o le como qualquer outro.",
+  "cases": [
+    {
+      "raw": "meu cpf é {cpf}",
+      "token": "[CPF]",
+      "kind": "cpf"
+    },
+    {
+      "raw": "meu cpf é {cpf_digits}",
+      "token": "[CPF]",
+      "kind": "cpf"
+    },
+    {
+      "raw": "meu email é {email}",
+      "token": "[EMAIL]",
+      "kind": "email"
+    },
+    {
+      "raw": "me liga no {tel_plus}",
+      "token": "[TELEFONE]",
+      "kind": "telefone"
+    },
+    {
+      "raw": "meu cel {tel_paren}",
+      "token": "[TELEFONE]",
+      "kind": "telefone"
+    },
+    {
+      "raw": "cel {tel_ddd}",
+      "token": "[TELEFONE]",
+      "kind": "telefone"
+    },
+    {
+      "raw": "cel {tel_digits}",
+      "token": "[TELEFONE]",
+      "kind": "telefone"
+    },
+    {
+      "raw": "meu zap {tel_local}",
+      "token": "[TELEFONE]",
+      "kind": "telefone"
+    },
+    {
+      "raw": "a placa é {placa_mercosul}",
+      "token": "[PLACA]",
+      "kind": "placa"
+    },
+    {
+      "raw": "a placa é {placa_old}",
+      "token": "[PLACA]",
+      "kind": "placa"
+    },
+    {
+      "raw": "está em {home}",
+      "token": "[CAMINHO]",
+      "kind": "caminho"
+    },
+    {
+      "raw": "minha chave é {key_or}",
+      "token": "[SEGREDO]",
+      "kind": "segredo"
+    },
+    {
+      "raw": "Authorization: {bearer}",
+      "token": "[SEGREDO]",
+      "kind": "segredo"
+    },
+    {
+      "raw": "meu nome é {nome_composto}",
+      "token": "[NOME]",
+      "kind": "nome"
+    },
+    {
+      "raw": "me chamo {nome_simples}",
+      "token": "[NOME]",
+      "kind": "nome"
+    },
+    {
+      "raw": "sou a {nome_curto}",
+      "token": "[NOME]",
+      "kind": "nome"
+    },
+    {
+      "raw": "nasci em {nascimento}",
+      "token": "[NASCIMENTO]",
+      "kind": "nascimento"
+    }
+  ],
+  "everything": "oi, sou a Maria Silva, cpf {cpf}, email {email2}, cel {tel_paren}, placa {placa_mercosul}, carro 2018, tenho 41 anos, cep 01310-100",
+  "with_slots": "meu cpf {cpf}, tenho 42 anos, cep 01310-100, carro 2015",
+  "with_phone_and_slots": "cel {tel_paren}, ano 2018, cep 04538132, tenho 29",
+  "random_pii": [
+    "{cpf}",
+    "{cpf_digits}",
+    "{email}",
+    "{email3}",
+    "{tel_plus}",
+    "{tel2}",
+    "{tel_ddd}",
+    "{placa_mercosul}",
+    "{placa_old2}",
+    "{home2}",
+    "{key_or}",
+    "{key_ant}"
+  ]
+}
