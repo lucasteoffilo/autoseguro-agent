@@ -204,7 +204,7 @@ def test_an_injection_in_the_lead_text_is_never_echoed_by_a_template():
 # --- templates de cotacao, recusa e handoff (2b) -----------------------------------------------------------------------------------------------
 from autoseguro.quote_client import Quote, _quote_fields  # noqa: E402
 from autoseguro.store import brl  # noqa: E402
-from autoseguro.templates import (AFTER_HANDOFF, CLOSED_REFUSED, HOLD_TEXT, NO_QUOTE_YET, failure_handoff_text, refusal_text, render_quote, render_refusal)  # noqa: E402
+from autoseguro.templates import (AFTER_HANDOFF, CLOSED_REFUSED, HOLD_TEXT, NO_DISCOUNT, NO_QUOTE_YET, failure_handoff_text, refusal_text, render_quote, render_refusal)  # noqa: E402
 from autoseguro.refusals import Limits, RefusalKind, classify_motive  # noqa: E402
 from tests.fakes import ok_body  # noqa: E402
 
@@ -290,7 +290,7 @@ def test_failure_handoff_texts_are_honest_generic_and_promise_nothing(reason, ne
 
 
 def test_every_static_template_passes_the_strict_guardrail_without_any_fact():
-    for text in (HOLD_TEXT, AFTER_HANDOFF, CLOSED_REFUSED, NO_QUOTE_YET, failure_handoff_text(HandoffReason.QUOTE_UNAVAILABLE),
+    for text in (HOLD_TEXT, AFTER_HANDOFF, CLOSED_REFUSED, NO_QUOTE_YET, NO_DISCOUNT, failure_handoff_text(HandoffReason.QUOTE_UNAVAILABLE),
                  failure_handoff_text(HandoffReason.SAFETY_GUARD), failure_handoff_text(HandoffReason.DATA_AMBIGUOUS), handoff_text("Atendimento comercial.")):
         assert check_reply(text, facts_used=(), base=BASE, lead_texts=[], author="template") == (), text
 
@@ -302,7 +302,7 @@ def test_which_templates_trip_the_vocabulary_families_is_reviewed_and_fixed():
     from autoseguro.handoff import HandoffReason as R
     from autoseguro import templates as T
     texts = {
-        "HOLD_TEXT": T.HOLD_TEXT, "AFTER_HANDOFF": T.AFTER_HANDOFF, "CLOSED_REFUSED": T.CLOSED_REFUSED, "NO_QUOTE_YET": T.NO_QUOTE_YET, "OFF_TOPIC": T.OFF_TOPIC, "AFTER_QUOTE": T.AFTER_QUOTE,
+        "HOLD_TEXT": T.HOLD_TEXT, "AFTER_HANDOFF": T.AFTER_HANDOFF, "CLOSED_REFUSED": T.CLOSED_REFUSED, "NO_QUOTE_YET": T.NO_QUOTE_YET, "NO_DISCOUNT": T.NO_DISCOUNT, "OFF_TOPIC": T.OFF_TOPIC, "AFTER_QUOTE": T.AFTER_QUOTE,
         "NOT_IN_FACTS": T.NOT_IN_FACTS, "NOT_UNDERSTOOD": T.NOT_UNDERSTOOD, "PRICE_OFFER": T.PRICE_OFFER, "CLAIM": T.CLAIM, "COMPLAINT": T.COMPLAINT, "CANCEL": T.CANCEL, "CLOSE": T.CLOSE,
         "GREETING": T.GREETING, "MEDIA_UNREADABLE": T.MEDIA_UNREADABLE, "STALLED": T.STALLED, "handoff_text": T.handoff_text(), "media_request": T.media_request("audio", "Qual é a sua idade?"),
         "failure:QUOTE_UNAVAILABLE": T.failure_handoff_text(R.QUOTE_UNAVAILABLE), "failure:SAFETY_GUARD": T.failure_handoff_text(R.SAFETY_GUARD),
@@ -310,7 +310,7 @@ def test_which_templates_trip_the_vocabulary_families_is_reviewed_and_fixed():
     }
     hits = {name: sorted(v.detail for v in check_reply(text, facts_used=(), base=BASE, lead_texts=[])) for name, text in texts.items()}
     assert {k: v for k, v in hits.items() if v} == {
-        "AFTER_HANDOFF": ["humano"], "NO_QUOTE_YET": ["palavra_de_preco"], "PRICE_OFFER": ["palavra_de_preco"], "CLOSE": ["aprovacao"], "handoff_text": ["humano"],
+        "AFTER_HANDOFF": ["humano"], "NO_QUOTE_YET": ["palavra_de_preco"], "NO_DISCOUNT": ["palavra_de_preco"], "PRICE_OFFER": ["palavra_de_preco"], "CLOSE": ["aprovacao"], "handoff_text": ["humano"],
         "failure:QUOTE_UNAVAILABLE": ["humano", "palavra_de_preco"], "failure:SAFETY_GUARD": ["humano"], "failure:DATA_AMBIGUOUS": ["humano"],
     }
     for name, text in texts.items():

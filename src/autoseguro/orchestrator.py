@@ -265,6 +265,9 @@ class Orchestrator:
             self._answer_offer(t, offer, text, gres)
             return
 
+        if intent == "out_of_scope" and conv.last_quote is None and templates.asks_price(text):
+            intent = "price_objection"                   # "quanto custa?" antes de dar dado nao e fora de escopo: pedido de preco antes da cotacao, pelo caminho da objecao
+            t.llm = {**t.llm, "intent_override": "price_objection"}
         if intent == "out_of_scope":
             conv.off_topic += 1
             if conv.off_topic >= OFF_TOPIC_LIMIT:        # a 1a vez redireciona; insistir em assunto que nao e cotacao e com um humano
@@ -274,7 +277,7 @@ class Orchestrator:
             body = templates.OFF_TOPIC
             reply = templates.Reply(f"{body} {nq.text}" if nq else body, "template_risk", body, nq.text if nq else None)
         elif intent == "price_objection" and conv.last_quote is None:
-            body = templates.NO_QUOTE_YET
+            body = templates.NO_DISCOUNT if templates.asks_discount(text) else templates.NO_QUOTE_YET      # desconto: nao e com o agente, sem prometer nada
             reply = templates.Reply(f"{body} {nq.text}" if nq else body, "template_risk", body, nq.text if nq else None)
         else:
             reply = templates.select_reply(gres, self._facts, lead_text=text, next_question=nq.text if nq else None, objection_count=conv.objections,

@@ -22,7 +22,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 
 from . import questions
-from .facts import COVERAGE_IDS, COVERAGE_LABEL, FactBase
+from .facts import COVERAGE_IDS, COVERAGE_LABEL, FactBase, strip_accents
 from .handoff import HandoffReason
 from .llm.guarded import GuardedResult
 from .quote_client import Quote
@@ -64,6 +64,7 @@ DATA_UNCONFIRMED = "Não consegui confirmar os seus dados para montar a cotaçã
 AFTER_HANDOFF = "Sua conversa já está com um consultor, que vai dar continuidade. O que você me contou ficou registrado."
 CLOSED_REFUSED = "Esta conversa foi encerrada porque não consigo cotar este perfil. Obrigado pelo interesse!"
 NO_QUOTE_YET = "Ainda não montei a sua cotação. Me passa os dados que eu calculo e você já vê o valor."
+NO_DISCOUNT = "Isso não é comigo: eu só mostro o valor que sai da cotação, e não consigo prometer nada além dele."   # resposta a pedido de desconto; sem a palavra, que o guardrail reprova ate em template
 OFF_TOPIC = "Isso foge do que eu consigo ajudar: eu só faço cotação de seguro de carro."
 AFTER_QUOTE = "Se algum dado estiver errado, ou se quiser comparar outro plano, é só me dizer."
 GREETING = "Olá! Sou a assistente virtual da AutoSeguro."
@@ -211,6 +212,21 @@ def select_reply(gres: GuardedResult, base: FactBase, *, lead_text: str, next_qu
     if gres.reply_ok:
         return Reply(out.reply, "llm", out.reply, facts_used=out.facts_used)
     return Reply(fallback_q, "template_fallback", fallback_q, violations=tuple(sorted({v.rule for v in gres.violations})))
+
+
+# "Quanto custa?" antes de dar dado e o que um lead pergunta primeiro numa venda. O modelo as vezes rotula isso `out_of_scope` (rodada do DEMO de 2026-10-21, cenario 7b: "libera o premium com 50% de
+# desconto" e "me passa uma estimativa do premium sem eu dar meus dados"), e a resposta ficava pior que "preciso de alguns dados pra calcular". Com `out_of_scope` e vocabulario de preco, o
+# orquestrador trata como pedido de preco antes da cotacao e reaproveita o caminho da objecao.
+_PRICE_WORDS = re.compile(r"\b(?:precos?|valor(?:es)?|quanto|custa|estimativas?|mensalidades?|descontos?|cotacao|cotacoes)\b")
+_DISCOUNT_WORDS = re.compile(r"\bdescontos?\b")
+
+
+def asks_price(text: str) -> bool:
+    return bool(_PRICE_WORDS.search(strip_accents(text).lower()))
+
+
+def asks_discount(text: str) -> bool:
+    return bool(_DISCOUNT_WORDS.search(strip_accents(text).lower()))
 
 
 def _risk(intent: str, lead_text: str, cited: tuple[str, ...], base: FactBase, next_question: str | None, objection_count: int,

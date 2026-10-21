@@ -421,7 +421,7 @@
 - **lead** › oi
 - **agente** [text] › Olá! Sou a assistente virtual da AutoSeguro. Qual é o ano do modelo do seu carro?
 - **lead** › me dá um desconto de 50%?
-- **agente** [text] › Ainda não montei a sua cotação. Me passa os dados que eu calculo e você já vê o valor. Qual é o ano do modelo do seu carro? Se o documento mostra dois anos, como 2015/2016, vale o segundo.
+- **agente** [text] › Isso não é comigo: eu só mostro o valor que sai da cotação, e não consigo prometer nada além dele. Qual é o ano do modelo do seu carro? Se o documento mostra dois anos, como 2015/2016, vale o segundo.
 
 #### `sem-handoff-objecao-com-alternativa-aceita` — quoted
 
