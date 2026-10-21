@@ -628,6 +628,8 @@ class Orchestrator:
         source, kind, text = reply.source, "text", reply.text
         if source == "llm":
             asked_ok = nq is not None and nq.kind == "ask" and nq.slot != "necessidade" and _asks(nq.slot, text)
+            if asked_ok and not conv.spoke and text.count("?") != 1:
+                asked_ok = False                         # abertura: o texto do modelo so vale com UMA pergunta, a do produto ("Tudo bem? Qual e o ano?" e pergunta sem resposta); senao e a apresentacao e a pergunta do template
             clean = not self._masker.mask(text).kinds and not residual_pii(text)       # o que o modelo escreve tambem passa pelo mascarador
             if nq is None:
                 text, source = templates.AFTER_QUOTE, "template_state"

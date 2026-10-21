@@ -113,9 +113,27 @@ def test_the_hardening_costs_one_good_reply_of_the_39_the_real_model_wrote_on_ne
     ("Perfeito, obrigada! Me passa o ano do modelo do carro?", "Perfeito, obrigada! Me passa o ano do modelo do carro?"),
     ("Entendi. Qual é o ano do carro?", "Entendi. Qual é o ano do carro?"),
     ("Ótimo! Para começar, qual é o ano do modelo do seu carro?", "Ótimo! Para começar, qual é o ano do modelo do seu carro?"),
-    ("Oi! Tudo bem? Para começar, qual é o ano do seu carro?", "Tudo bem? Para começar, qual é o ano do seu carro?")])   # a saudacao do modelo cede a da casa
+    ("Oi, para começar, qual é o ano do seu carro?", "Para começar, qual é o ano do seu carro?")])   # a saudacao do modelo cede a da casa
 def test_ordinary_friendly_replies_still_go_through_untouched(reply, shown):
     """Intactas = o que o modelo escreveu segue valendo; so a primeira resposta ganha a apresentacao da casa na frente (e perde a saudacao propria)."""
     h = Harness(llm=ScriptedLLM(reply_json(reply)))
     h.say(GREET)
     assert h.agent[0]["text"] == f"{templates.GREETING} {shown}" and h.meta(h.agent[0])["reply_source"] == "llm"
+
+
+@pytest.mark.parametrize("reply", ["Oi! Tudo bem? Para começar, qual é o ano do seu carro?", "Olá! Tudo bem? Qual é o ano do modelo? Pode ser o do documento?",
+                                   "Para te dar uma cotação, preciso do ano do modelo do seu carro. Qual é o ano do modelo? Pode me dizer?", "Tudo bem?", "Olá! Como posso ajudar?"])
+def test_an_opening_with_two_questions_or_none_about_the_product_is_the_house_introduction_plus_the_templates_question(reply):
+    """Abertura: o texto do modelo so vale com UMA pergunta, a do produto. "Tudo bem?" ficaria sem resposta e a pergunta duplicada soa a formulario."""
+    from autoseguro import questions
+    h = Harness(llm=ScriptedLLM(reply_json(reply)))
+    h.say(GREET)
+    assert h.agent[0]["text"] == f"{templates.GREETING} {questions.ask('veiculo_ano')}" and h.meta(h.agent[0])["reply_source"] == "template_question"
+
+
+def test_the_one_question_rule_is_only_for_the_opening():
+    """Depois da abertura o texto do modelo segue as regras de sempre (aqui, duas perguntas num turno sem dado novo continuam valendo se a do produto esta la)."""
+    h = Harness(llm=ScriptedLLM(reply_json("Olá! Qual é o ano do seu carro?"), reply_json("Sem pressa. Tudo bem? Qual é o ano do seu carro?")))
+    h.say(GREET)
+    h.say("ainda estou vendo aqui")
+    assert h.agent[0]["text"].startswith(templates.GREETING) and h.meta(h.agent[1])["reply_source"] == "llm" and h.agent[1]["text"] == "Sem pressa. Tudo bem? Qual é o ano do seu carro?"
