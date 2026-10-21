@@ -45,6 +45,18 @@ def test_the_synthetic_suite_passes_every_criterion(backend, synthetic):
     assert {c.id: c.ratio for c in checks}["C2"] == f"{len(specs)}/{len(specs)}"
 
 
+def test_the_two_refusable_profiles_that_did_not_end_in_a_refusal_are_named_and_explained(backend, synthetic):
+    specs, results = synthetic
+    c = criteria.refusal_check(results, backend)
+    assert c.info["perfil recusável que terminou sem recusa (handoff ou aberto)"] == 2 and len(c.notes) == 2
+    by = {n.split("`")[1]: n for n in c.notes}
+    assert set(by) == {"handoff-quote-unavailable-na-pre-checagem", "handoff-data-ambiguous-ano-futuro"}
+    assert "só diz \"recusado\" depois que a API confirma" in by["handoff-quote-unavailable-na-pre-checagem"] and "recusa_provavel" in by["handoff-quote-unavailable-na-pre-checagem"]
+    assert "pode ser um modelo do próximo ano" in by["handoff-data-ambiguous-ano-futuro"]
+    md = report.markdown(backend_label=backend.label, today="2026-10-21", seed=1, checks=[c], synthetic=specs, synth_results=results, dataset=None, sample=None)
+    assert "### C3: o que explicar (2)" in md and "É o comportamento projetado, não um erro." in md
+
+
 def test_every_handoff_reason_has_a_synthetic_scenario(synthetic):
     specs, _ = synthetic
     assert {s.expect_reason for s in specs if s.expect_reason} == {r.value for r in HandoffReason}

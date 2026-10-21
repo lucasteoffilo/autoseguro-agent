@@ -43,6 +43,10 @@ def markdown(*, backend_label: str, today: str, seed: int, checks: list[Check], 
         if c.info:
             out.append(f"- **{c.id}** — " + "; ".join(f"{k}: {v}" for k, v in c.info.items()))
     for c in checks:
+        if c.notes:
+            out += ["", f"### {c.id}: o que explicar ({len(c.notes)})", "", "Perfis que a API recusaria e que **não** terminaram em recusa. Não são falhas do critério (nenhum foi cotado); são os dois caminhos em que o "
+                    "agente deliberadamente não diz \"recusado\":", ""] + [f"- {n}" for n in c.notes[:20]]
+    for c in checks:
         if c.failures:
             out += ["", f"### Falhas de {c.id} ({len(c.failures)})", ""] + [f"- {f}" for f in c.failures[:40]]
     out += ["", f"## Cenários sintéticos ({len(synthetic)}, escritos à mão)", "", "| Cenário | Esperado | Obteve | |", "|---|---|---|---|"]
@@ -77,7 +81,7 @@ def markdown(*, backend_label: str, today: str, seed: int, checks: list[Check], 
 
 def summary(*, checks: list[Check], synth_results: list[Result], dataset: dict[str, Any] | None, backend_label: str, today: str, seed: int) -> dict[str, Any]:
     return {"passes": all(c.passed for c in checks), "backend": backend_label, "today": today, "seed": seed,
-            "checks": {c.id: {"title": c.title, "numerator": c.numerator, "denominator": c.denominator, "failures": len(c.failures), "info": c.info} for c in checks},
+            "checks": {c.id: {"title": c.title, "numerator": c.numerator, "denominator": c.denominator, "failures": len(c.failures), "info": c.info, "notes": len(c.notes)} for c in checks},
             "synthetic": {"scenarios": len(synth_results), "distribution": dict(distribution(synth_results))},
             "dataset": None if dataset is None else {k: v for k, v in dataset.items() if k != "distribution"} | {"distribution": dict(dataset["distribution"])}}
 

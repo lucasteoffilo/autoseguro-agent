@@ -1,6 +1,6 @@
 # Relatório dos evals — PASSA
 
-- **Gerado em:** 2026-10-21 15:18 UTC · **relógio dos evals:** 2026-10-21 · **semente da seleção:** 20261021
+- **Gerado em:** 2026-10-21 16:36 UTC · **relógio dos evals:** 2026-10-21 · **semente da seleção:** 20261021
 - **Backend da `/quote` e oráculo:** servico vendorizado em processo (relogio 2026-10-21)
 - **LLM:** `MockLLM` (determinístico) atrás do mesmo `GuardedLLM` e do mesmo orquestrador de produção; nenhuma chamada de rede para LLM.
 
@@ -17,6 +17,13 @@
 - **C1** — mensagens com R$: 1764; valores em reais conferidos: 3933; cotações recalculadas no serviço: 1764
 - **C2** — cenários de handoff: 17; motivos cobertos: 12/12
 - **C3** — recusas ditas ao lead: 757; cotações ditas ao lead: 1764; perfil recusável que terminou sem recusa (handoff ou aberto): 2
+
+### C3: o que explicar (2)
+
+Perfis que a API recusaria e que **não** terminaram em recusa. Não são falhas do critério (nenhum foi cotado); são os dois caminhos em que o agente deliberadamente não diz "recusado":
+
+- `handoff-quote-unavailable-na-pre-checagem` terminou em `handoff:QUOTE_UNAVAILABLE` (precheck:attempts_exhausted:connection), e a API recusaria: a pré-checagem previu a recusa e a API estava fora. O agente só diz "recusado" depois que a API confirma, então a conversa foi a um humano com o veredito (`precheck: recusa_provavel`) no pacote. É o comportamento projetado, não um erro.
+- `handoff-data-ambiguous-ano-futuro` terminou em `handoff:DATA_AMBIGUOUS` (entrada_invalida:veiculo_ano:ano_modelo_futuro), e a API recusaria: ano-modelo futuro. A API o recusaria como "fora das faixas", mas pode ser um modelo do próximo ano, então a decisão é de um humano (`DATA_AMBIGUOUS`) em vez de uma recusa automática. É a regra do PLAN, não um erro.
 
 ## Cenários sintéticos (34, escritos à mão)
 
@@ -59,7 +66,7 @@
 
 ## Conversas derivadas do dataset (população inteira)
 
-- **2500 conversas** reproduzidas (16470 mensagens do lead, 15s). Colunas lidas: `conversation_id`, `message_index`, `sender_role`, `message_type`, `message_body` — nenhuma das que vazam o gabarito.
+- **2500 conversas** reproduzidas (16470 mensagens do lead, 18s). Colunas lidas: `conversation_id`, `message_index`, `sender_role`, `message_type`, `message_body` — nenhuma das que vazam o gabarito.
 - **O harness responde só o que o roteiro do vendedor nunca pergunta:** a cobertura e a data de início, uma vez cada e só quando o agente pergunta (3498 respostas no total). Todo o resto é a fala do próprio lead. Chegaram a uma cotação `ok`: 1749 conversas.
 - Conversas com mídia sem transcrição: 1420 (56.8%) · com PII mascarada: 2500 (100.0%)
 

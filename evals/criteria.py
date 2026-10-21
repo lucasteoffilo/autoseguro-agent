@@ -35,6 +35,7 @@ class Check:
     denominator: int = 0
     failures: list[str] = field(default_factory=list)
     info: dict[str, Any] = field(default_factory=dict)
+    notes: list[str] = field(default_factory=list)       # o que o relatorio explica por extenso (nao e falha)
 
     @property
     def passed(self) -> bool:
@@ -87,6 +88,17 @@ def price_check(results: list[Result], backend: Backend) -> Check:
     return c
 
 
+def _why_not_refused(r: Result) -> str:
+    detail = r.detail or ""
+    if r.reason == "QUOTE_UNAVAILABLE" and detail.startswith("precheck:"):
+        return ("a pré-checagem previu a recusa e a API estava fora. O agente só diz \"recusado\" depois que a API confirma, então a conversa foi a um humano com o veredito "
+                f"(`precheck: {(r.package or {}).get('precheck')}`) no pacote. É o comportamento projetado, não um erro.")
+    if "ano_modelo_futuro" in detail:
+        return ("ano-modelo futuro. A API o recusaria como \"fora das faixas\", mas pode ser um modelo do próximo ano, então a decisão é de um humano (`DATA_AMBIGUOUS`) em vez de uma recusa "
+                "automática. É a regra do PLAN, não um erro.")
+    return "a conversa terminou antes de a API confirmar a recusa. Conferir se é o comportamento esperado."
+
+
 def _verified(r: Result) -> dict[str, str]:
     return {s: v["value"] for s, v in r.slots.items() if v.get("status") in ("anchored", "confirmed") and v.get("value") is not None}
 
@@ -134,6 +146,7 @@ def refusal_check(results: list[Result], backend: Backend) -> Check:
                 status, _ = backend.oracle({"plano_id": cheapest, "idade": int(v["idade"]), "veiculo_ano": int(v["veiculo_ano"])})
                 if status == 422 and not any(m["kind"] == "refusal" for m in r.agent):
                     refusable_not_decided += 1
+                    c.notes.append(f"`{r.id}` terminou em `{r.klass}` ({r.detail or 'sem detalhe'}), e a API recusaria: {_why_not_refused(r)}")
     c.info = {"recusas ditas ao lead": refusals, "cotações ditas ao lead": quotes, "perfil recusável que terminou sem recusa (handoff ou aberto)": refusable_not_decided}
     return c
 
