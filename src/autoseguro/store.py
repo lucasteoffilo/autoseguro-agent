@@ -2,7 +2,7 @@
 
   conversations   como terminou (open, quoted, refused, handoff + motivo + componente), em que estado de slots, e que pacote foi entregue ao humano
   messages        o que foi dito, por quem, em que ordem; ja processada (dedupe por external_id); que cotacao exibe; o que o LLM e o guardrail fizeram (meta)
-  quotes          que cotacao o lead recebeu, para que entrada normalizada, com que status e valor (cotacao, alternativa ou recusa)
+  quotes          que cotacao o lead recebeu, para que entrada normalizada, com que status e valor (cotacao, alternativa, recusa ou a confirmacao da pre-checagem)
   quote_attempts  como a /quote chegou a esse resultado: cada tentativa, status HTTP, tempo, por que parou
 
 Nunca persistido: texto cru, CPF, e-mail, telefone, nome, placa, prompts. O caller entrega texto ja mascarado; um teste varre o arquivo do banco.
@@ -56,7 +56,7 @@ CREATE TABLE IF NOT EXISTS quotes (
   id TEXT PRIMARY KEY,
   trace_id TEXT NOT NULL REFERENCES conversations(trace_id),
   created_at TEXT NOT NULL,
-  kind TEXT NOT NULL CHECK (kind IN ('quote','alternative')),
+  kind TEXT NOT NULL CHECK (kind IN ('quote','alternative','precheck')),  -- precheck: confirmacao da recusa prevista; o preco dela e parcial e nunca e exibido
   status TEXT NOT NULL CHECK (status IN ('ok','refused','invalid','unavailable')),
   request TEXT NOT NULL,                  -- JSON: a entrada NORMALIZADA enviada a /quote
   response TEXT,                          -- JSON: o corpo 200 como veio, ou {"motivo": ...} da recusa
@@ -208,7 +208,7 @@ class Store:
         """A INVARIANTE DO PRECO: todo "R$" escrito pelo agente existe na resposta de uma cotacao 'ok' da MESMA conversa. Devolve os que NAO existem (tem que ser [])."""
         allowed: set[str] = set()
         for q in self.quotes(trace_id):
-            if q["status"] != "ok" or not q["response"]:
+            if q["status"] != "ok" or not q["response"] or q["kind"] == "precheck":   # o preco parcial da confirmacao nunca pode aparecer numa mensagem
                 continue
             resp = json.loads(q["response"])
             values = [resp.get("premio_mensal"), resp.get("franquia"), (resp.get("primeiro_pagamento_pro_rata") or {}).get("valor_primeiro_pagamento")]

@@ -135,3 +135,20 @@ def build_quote_request(raw: Mapping[str, object], *, today: date, known_plans: 
         except SlotValueError as exc:
             issues.append(SlotIssue(slot, exc.code))
     return tuple(issues) if issues else QuoteRequest(**values)
+
+
+def build_eligibility_request(raw: Mapping[str, object], *, today: date, plano_id: str, known_plans: Iterable[str]) -> QuoteRequest | tuple[SlotIssue, ...]:
+    """O pedido da confirmacao da pre-checagem: so idade e ano, com a MESMA higiene de entrada do pedido completo. Sem CEP nem data (a recusa nao depende deles)."""
+    known = tuple(known_plans)
+    values: dict[str, Any] = {}
+    issues: list[SlotIssue] = []
+    for slot, fn in (("plano_id", lambda v: normalize_plano(v, known)), ("idade", normalize_idade), ("veiculo_ano", lambda v: normalize_ano(v, today))):
+        value = plano_id if slot == "plano_id" else raw.get(slot)
+        if value in (None, ""):
+            issues.append(SlotIssue(slot, "ausente"))
+            continue
+        try:
+            values[slot] = fn(value)
+        except SlotValueError as exc:
+            issues.append(SlotIssue(slot, exc.code))
+    return tuple(issues) if issues else QuoteRequest(**values)

@@ -32,7 +32,7 @@ from . import questions
 from .facts import FactBase, strip_accents
 from .llm.schema import NECESSIDADES, SLOT_NAMES, SlotValue, TurnOutput
 from .quote_client import QuoteClient, QuoteOutcome
-from .slots import QuoteRequest, SlotIssue, build_quote_request
+from .slots import QuoteRequest, SlotIssue, build_eligibility_request, build_quote_request
 
 
 class Status(StrEnum):
@@ -442,6 +442,18 @@ class SlotLedger:
         return NotQuotable((), (), built) if isinstance(built, tuple) else built
 
 
+def _eligibility_request(ledger: SlotLedger, planos: Mapping[str, Any], *, today: date) -> QuoteRequest | NotQuotable:
+    """O pedido da CONFIRMACAO da pre-checagem: so idade e ano, ambos verificados, no plano mais barato e sem CEP nem data (a recusa nao depende deles)."""
+    v = ledger.verified()
+    missing = tuple(s for s in ("veiculo_ano", "idade") if s not in v)
+    if missing:
+        return NotQuotable(missing, ledger.pending())
+    known = [p["id"] for p in planos["planos"]]
+    cheapest = min(planos["planos"], key=lambda p: len(p["coberturas"]))["id"]
+    built = build_eligibility_request({"idade": v["idade"], "veiculo_ano": v["veiculo_ano"]}, today=today, plano_id=cheapest, known_plans=known)
+    return NotQuotable((), (), built) if isinstance(built, tuple) else built
+
+
 class QuoteGate:
     """O unico chamador do cliente da /quote. Se algum slot nao esta verificado, o cliente NAO e chamado."""
 
@@ -450,6 +462,17 @@ class QuoteGate:
 
     def quote(self, ledger: SlotLedger, *, today: date, plano_id: str | None = None, **client_kwargs: Any) -> QuoteOutcome | NotQuotable:
         built = ledger.quote_request(self._planos, today=today, plano_id=plano_id)
+        if isinstance(built, NotQuotable):
+            return built
+        return self._client.quote(built, **client_kwargs)
+
+    def eligibility_request(self, ledger: SlotLedger, *, today: date) -> QuoteRequest | NotQuotable:
+        return _eligibility_request(ledger, self._planos, today=today)
+
+    def probe(self, ledger: SlotLedger, *, today: date, **client_kwargs: Any) -> QuoteOutcome | NotQuotable:
+        """A chamada de confirmacao da pre-checagem. Mesma regra do gate: sem idade e ano verificados, o cliente NAO e chamado. O preco de uma resposta 200 daqui
+        e parcial (sem CEP) e o orquestrador nunca o exibe."""
+        built = _eligibility_request(ledger, self._planos, today=today)
         if isinstance(built, NotQuotable):
             return built
         return self._client.quote(built, **client_kwargs)
