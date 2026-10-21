@@ -211,7 +211,8 @@ O relatório passa a trazer três números: **(1)** slots errados que chegariam 
 | Recusa da API (422 de negócio) | template por **código** do motivo (conjunto fechado, sem o texto cru da API) e os dados que a motivaram; encerra | conversa `refused`, **não** é handoff |
 | `/quote` esgotou tentativas ou orçamento | "o sistema que calcula os valores está instável… prefiro não estimar nenhum preço" + handoff | `QUOTE_UNAVAILABLE`, componente `quote_api` |
 | Provedor filtra a geração (`content_filter`) | 1 retry; filtrou de novo: a pergunta pendente por template, nenhum slot muda; 2º turno seguido: handoff | `SAFETY_GUARD`, componente `llm` (PLAN 5.6) |
-| LLM fora (timeout, 5xx, cota, protocolo) | "estou com uma instabilidade…" + handoff | `SAFETY_GUARD`, componente `llm` |
+| LLM fora (timeout, 5xx, cota, 401/402/403/404, ou um 400 antes de qualquer sucesso) | "estou com uma instabilidade…" + handoff | `SAFETY_GUARD`, componente `llm` |
+| **400 ou 422 isolado** do provedor, depois de chamadas bem-sucedidas com o mesmo formato (é o **conteúdo** daquela mensagem) | a pergunta pendente por template, nada extraído, o pedido **não** é repetido; dois turnos seguidos viram handoff | `SAFETY_GUARD`, componente `llm`, no segundo |
 | O mascarador deixou passar algo que o detector vê | handoff, nada vai ao LLM nem ao banco | `SAFETY_GUARD`, componente `masker` |
 | Qualquer exceção inesperada, ou um R$ que a API não devolveu | handoff | `SAFETY_GUARD`, componente `orchestrator` (só o **nome** da exceção é gravado) |
 

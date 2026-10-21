@@ -175,6 +175,8 @@ A 1328 de entrada, medida por esse modelo, está abaixo dos ~2400 do modelo de c
 
 ### 5.6 Bloqueio do provedor (`content_filter`): critério do smoke e especificação da 2b
 
+**Extensão (2026-10-21): um 400 ou 422 do provedor entra na mesma regra.** Na rodada do DEMO com o modelo real, a mensagem de injeção do cenário 7 recebeu HTTP 400 do provedor de origem (AtlasCloud, `{"code":400,"msg":"bad request"}`) depois de 25 chamadas com o mesmo formato; o corpo foi reconstruído offline (7.112 bytes, sem caractere de controle, sem `⏎`, mesmo `system` e mesma estrutura do turno que deu 200) e reenviado uma vez, com o mesmo 400 em 2 s: é determinístico e do **conteúdo**. Um 400/422 isolado, depois de chamadas que o provedor respondeu, vira a pergunta pendente por template (sem extrair; sem repetir o pedido) e dois seguidos viram `SAFETY_GUARD`/`llm`; 401, 402, 403, 404 e um 400 antes de qualquer sucesso seguem direto a `SAFETY_GUARD`.
+
 **Origem (smoke de 2026-10-20):** a mesma mensagem adversarial (m14, a injeção), com a mesma entrada, passou na 1ª repetição e voltou na 2ª com `finish_reason=content_filter`, sem conteúdo e com 60 tokens gerados. O filtro agiu sobre a **geração**, não sobre a entrada, e **não é determinístico**. A amostra é 1 mensagem × 2 repetições: não dá taxa.
 
 **Classificação:** `LLMResult.error = "content_filter"`, HTTP 200. **Não** é falha de serviço (não alimenta o disjuntor), **não** é erro de protocolo (não aborta) e **não** é erro de formato do modelo.

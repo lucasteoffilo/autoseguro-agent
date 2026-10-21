@@ -34,7 +34,7 @@ from .llm.base import LLMResult, outcome_class
 from .llm.guarded import GuardedLLM, GuardedResult, UnsafePayload
 from .llm.prompt import build_user_message
 from .llm.redact import DETAIL_LIMIT, redact
-from .llm.throttle import ProtocolError, QuotaExhausted, ServiceUnstable
+from .llm.throttle import ProtocolError, QuotaExhausted, ServiceUnstable, is_protocol_error
 from .logexport import scan
 from .masker import Masker, residual_pii
 from .media import media_kind
@@ -156,6 +156,7 @@ class Orchestrator:
         self._clock = clock or RealClock()
         self._today, self._next_step, self._mode = today, handoff_next_step, mode
         self._ceiling, self._hold_after = turn_ceiling_s, hold_after_s
+        self._llm_answered = 0                          # chamadas ao LLM que o provedor respondeu (2xx): um 400 so e "do conteudo" depois de o MESMO formato ter dado certo
         self._convs: dict[str, _Conv] = {}
 
     # --- API ------------------------------------------------------------------------------------------------------------------------------------
@@ -421,11 +422,15 @@ class Orchestrator:
             except QuotaExhausted:
                 return FailedComponent.LLM, "cota_diaria", None
             except ProtocolError as exc:
-                return FailedComponent.LLM, f"protocolo:{exc.status}", exc.result
+                return self._protocol_failure(exc.result, attempt)
             except ServiceUnstable as exc:
                 return FailedComponent.LLM, "servico_instavel", exc.result
             error = gres.result.error
             klass = outcome_class(error)
+            if is_protocol_error(gres.result):           # um LLM sem o limitador devolve o 4xx como resultado; a regra e a mesma
+                return self._protocol_failure(gres.result, attempt)
+            if klass == "answered":
+                self._llm_answered += 1
             if error is None and gres.output is not None:
                 return _LLMOutcome("ok", gres, None, attempt)
             if klass == "answered":                      # o provedor respondeu mal (saida fora do schema, truncada): repetir nao melhora
@@ -435,6 +440,14 @@ class Orchestrator:
         if kind == "service":
             return FailedComponent.LLM, error or "servico", gres.result if gres else None
         return _LLMOutcome(kind, gres, error, attempt)
+
+    def _protocol_failure(self, res: LLMResult, attempt: int) -> _LLMOutcome | tuple[FailedComponent, str, LLMResult | None]:
+        """Um 4xx do provedor. 400 e 422 ISOLADOS, depois de chamadas que o provedor respondeu com o mesmo formato, sao do CONTEUDO daquela mensagem (rodada de 2026-10-21: o mesmo corpo,
+        reenviado, deu o mesmo 400 do provedor de origem, "bad request"): entram na regra do `content_filter` (a pergunta pendente por template, sem extrair, e dois turnos seguidos viram
+        SAFETY_GUARD/llm), SEM repetir o pedido, que e deterministico. 401, 402, 403, 404 e o resto (e um 400 antes de qualquer sucesso) sao problema do PEDIDO ou da conta: direto a SAFETY_GUARD."""
+        if res.http_status in (400, 422) and self._llm_answered > 0:
+            return _LLMOutcome("blocked", GuardedResult(res, ()), res.error, attempt)
+        return FailedComponent.LLM, f"protocolo:{res.http_status}", res
 
     def _call_llm(self, message: str, lead_texts: list[str], timeout_s: float) -> GuardedResult:
         """O LLM numa thread com prazo: o teto do turno vale mesmo que o provedor demore ou o limitador de taxa durma."""

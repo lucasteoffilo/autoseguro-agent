@@ -597,7 +597,7 @@ def test_a_failing_llm_layer_ends_in_one_visible_handoff_with_the_component_that
     assert "bug" not in h.store.all_text(), "so o nome da excecao e registrado"
 
 
-@pytest.mark.parametrize("kind", ["timeout", "http_503", "http_401"])
+@pytest.mark.parametrize("kind", ["timeout", "http_503"])
 def test_a_service_failure_gets_one_retry_and_then_a_handoff(kind):
     h = Harness(failures=[kind, kind])
     r = h.say("oi")
