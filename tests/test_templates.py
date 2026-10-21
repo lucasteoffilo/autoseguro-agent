@@ -63,7 +63,7 @@ def test_complaint_cancel_and_close_are_handoffs_by_template_and_promise_nothing
     r = select_reply(gres(intent, reply="Vou resolver isso agora e te devolvo o dinheiro!"), BASE, lead_text="x")
     assert r.source == "template_risk" and r.action == "handoff" and r.handoff_reason is reason
     assert r.text == f"{lead_in} {handoff_text()}"
-    assert check_reply(r.body, facts_used=(), base=BASE, lead_texts=["x"]) == ()
+    assert check_reply(r.body, facts_used=(), base=BASE, lead_texts=["x"], author="template") == ()
     for forbidden in ("resolver", "dinheiro", "reembols", "desconto", "garant", "prazo", "horas", "amanh", "r$"):
         assert forbidden not in r.text.lower()
 
@@ -96,7 +96,7 @@ QUESTIONS = ["e se roubarem meu carro amanhã, vocês cobrem?", "o plano Complet
 def test_every_risk_body_passes_the_strict_guardrail_with_the_facts_it_used(intent, lead, count):
     r = select_reply(gres(intent), BASE, lead_text=lead, objection_count=count, next_question=questions.ask("idade"))
     assert r.source == "template_risk" and r.body
-    assert check_reply(r.body, facts_used=r.facts_used, base=BASE, lead_texts=[lead]) == (), (intent, lead, r.body)
+    assert check_reply(r.body, facts_used=r.facts_used, base=BASE, lead_texts=[lead], author="template") == (), (intent, lead, r.body)
     assert r.text == (f"{r.body} {r.question}" if r.question else r.body)
 
 
@@ -292,4 +292,26 @@ def test_failure_handoff_texts_are_honest_generic_and_promise_nothing(reason, ne
 def test_every_static_template_passes_the_strict_guardrail_without_any_fact():
     for text in (HOLD_TEXT, AFTER_HANDOFF, CLOSED_REFUSED, NO_QUOTE_YET, failure_handoff_text(HandoffReason.QUOTE_UNAVAILABLE),
                  failure_handoff_text(HandoffReason.SAFETY_GUARD), failure_handoff_text(HandoffReason.DATA_AMBIGUOUS), handoff_text("Atendimento comercial.")):
-        assert check_reply(text, facts_used=(), base=BASE, lead_texts=[]) == (), text
+        assert check_reply(text, facts_used=(), base=BASE, lead_texts=[], author="template") == (), text
+
+
+# --- ETAPA 4: os templates citam, de proposito, palavras que o guardrail proibe ao LLM ---------------------------------------------------------------------
+def test_which_templates_trip_the_vocabulary_families_is_reviewed_and_fixed():
+    """O guardrail tem duas camadas: o NUCLEO (vale para qualquer texto) e as FAMILIAS de vocabulario (so para o que o LLM escreve). Um template pode citar "consultor", "valor" ou "apolice" de
+    proposito. Este teste fixa QUAIS templates fazem isso e com que familia: uma frase nova de produto que traga uma promessa de contato, um preco ou uma aprovacao aparece aqui como diff."""
+    from autoseguro.handoff import HandoffReason as R
+    from autoseguro import templates as T
+    texts = {
+        "HOLD_TEXT": T.HOLD_TEXT, "AFTER_HANDOFF": T.AFTER_HANDOFF, "CLOSED_REFUSED": T.CLOSED_REFUSED, "NO_QUOTE_YET": T.NO_QUOTE_YET, "OFF_TOPIC": T.OFF_TOPIC, "AFTER_QUOTE": T.AFTER_QUOTE,
+        "NOT_IN_FACTS": T.NOT_IN_FACTS, "NOT_UNDERSTOOD": T.NOT_UNDERSTOOD, "PRICE_OFFER": T.PRICE_OFFER, "CLAIM": T.CLAIM, "COMPLAINT": T.COMPLAINT, "CANCEL": T.CANCEL, "CLOSE": T.CLOSE,
+        "GREETING": T.GREETING, "MEDIA_UNREADABLE": T.MEDIA_UNREADABLE, "STALLED": T.STALLED, "handoff_text": T.handoff_text(), "media_request": T.media_request("audio", "Qual é a sua idade?"),
+        "failure:QUOTE_UNAVAILABLE": T.failure_handoff_text(R.QUOTE_UNAVAILABLE), "failure:SAFETY_GUARD": T.failure_handoff_text(R.SAFETY_GUARD),
+        "failure:DATA_AMBIGUOUS": T.failure_handoff_text(R.DATA_AMBIGUOUS),
+    }
+    hits = {name: sorted(v.detail for v in check_reply(text, facts_used=(), base=BASE, lead_texts=[])) for name, text in texts.items()}
+    assert {k: v for k, v in hits.items() if v} == {
+        "AFTER_HANDOFF": ["humano"], "NO_QUOTE_YET": ["palavra_de_preco"], "PRICE_OFFER": ["palavra_de_preco"], "CLOSE": ["aprovacao"], "handoff_text": ["humano"],
+        "failure:QUOTE_UNAVAILABLE": ["humano", "palavra_de_preco"], "failure:SAFETY_GUARD": ["humano"], "failure:DATA_AMBIGUOUS": ["humano"],
+    }
+    for name, text in texts.items():
+        assert check_reply(text, facts_used=(), base=BASE, lead_texts=[], author="template") == (), name

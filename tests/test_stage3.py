@@ -106,7 +106,7 @@ def test_media_without_transcription_is_answered_by_a_request_for_text_and_the_l
                                               "Qual é o ano do modelo do seu carro? Se o documento mostra dois anos, como 2015/2016, vale o segundo.")
     assert h.llm.calls == [] and json.loads(h.conv["slots"]) == {}, "o 12 de '(12s)' nao e idade de ninguem"
     assert json.loads(h.store.messages(h.trace)[0]["meta"])["media"] == "audio" and h.meta(h.agent[0])["reply_source"] == "template_media"
-    assert check_reply(templates.media_request("audio"), facts_used=(), base=BASE, lead_texts=[]) == ()
+    assert check_reply(templates.media_request("audio"), facts_used=(), base=BASE, lead_texts=[], author="template") == ()
 
 
 @pytest.mark.parametrize("marker,what", [("[audio] mensagem de voz (7s)", "áudio"), ("[imagem] foto do documento do carro", "imagem"), ("[documento] documento_do_carro.pdf", "documento"),
@@ -215,4 +215,4 @@ def test_every_new_static_template_passes_the_strict_guardrail():
     for text in (templates.MEDIA_UNREADABLE, templates.STALLED, templates.GREETING, templates.media_request("image", "Qual é a sua idade?"),
                  templates.media_request("video"), templates.failure_handoff_text(HandoffReason.MEDIA_UNREADABLE),
                  templates.failure_handoff_text(HandoffReason.CONVERSATION_STALLED), templates.failure_handoff_text(HandoffReason.OUT_OF_SCOPE)):
-        assert check_reply(text, facts_used=(), base=BASE, lead_texts=[]) == (), text
+        assert check_reply(text, facts_used=(), base=BASE, lead_texts=[], author="template") == (), text

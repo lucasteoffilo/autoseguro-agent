@@ -65,13 +65,18 @@ FATOS
 {base.render_for_prompt()}"""
 
 
+def _flat(text: str) -> str:
+    """Quebras de linha do lead viram " ⏎ ": uma linha que comece com "assistente:", "dados já coletados:" ou "mensagem do lead:" nao pode ser forjada por quem escreve a mensagem."""
+    return " ⏎ ".join(part for part in text.splitlines()) if "\n" in text or "\r" in text else text
+
+
 def build_user_message(*, today: date, known_slots: Mapping[str, object], asked_slot: str | None,
                        history: Sequence[tuple[str, str]], message: str) -> str:
     """`history`: (papel, texto) com papel 'lead' ou 'assistente', as ultimas mensagens, a mais recente por ultimo. Textos ja mascarados."""
     known = ", ".join(f"{k}={v}" for k, v in sorted(known_slots.items())) or "nenhum"
-    hist = "\n".join(f"{role}: {text}" for role, text in history) or "(sem histórico)"
+    hist = "\n".join(f"{role}: {_flat(text)}" for role, text in history) or "(sem histórico)"
     return (f"hoje: {today.isoformat()}\n"
             f"dados já coletados: {known}\n"
             f"pergunta pendente: {asked_slot or 'nenhuma'}\n"
             f"histórico (mais recente por último):\n{hist}\n"
-            f"mensagem do lead:\n{message}")
+            f"mensagem do lead:\n{_flat(message)}")
