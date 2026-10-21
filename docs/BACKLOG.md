@@ -12,3 +12,10 @@ O que ficou de fora **de propósito**. Não são promessas: cada item diz por qu
 2. **Separar `json_schema` de `provider.require_parameters` no adaptador.**
    Hoje o adaptador os envia juntos (e `require_parameters` também quando há `reasoning`). Por isso o passo "acrescenta só o `json_schema`" do diagnóstico de 2026-10-20 não seria possível por configuração: o mais próximo era `json_schema + require_parameters`. Um `LLM_REQUIRE_PARAMETERS=on|off` permitiria descascar um parâmetro de cada vez.
    *Por que ficou de fora:* não foi necessário, o diagnóstico fechou no primeiro passo.
+
+## Guardrail
+
+3. **Lista de permissão para o texto do LLM nas intenções neutras (ack curto + a pergunta do produto).**
+   O guardrail de palavras (README D10) deixa passar ~1 em 5 paráfrases hostis inéditas. Uma lista de permissão fecharia de vez: o modelo só escreve um *ack* de até ~8 palavras de um conjunto fechado ("Anotado!", "Entendi.", "Perfeito, obrigada!") e a pergunta é sempre a do produto. Um protótipo sobre as 39 respostas neutras gravadas do modelo real manteve 14 das 30 que o guardrail aprova hoje: metade do que o LLM escreve passaria a vir de template.
+   *Por que ficou de fora:* muda a decisão D3 ("o LLM redige a conversa") e o custo em naturalidade só se mede com o log real. *Decisão do autor, depois do log da conversa real* (o guardrail de palavras está fechado: sem mais famílias de vocabulário). *Vale fazer se:* o log mostrar uma paráfrase de promessa que o guardrail deixou passar, ou se o autor preferir garantia estrutural a naturalidade.
+
