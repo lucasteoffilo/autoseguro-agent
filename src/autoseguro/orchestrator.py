@@ -121,6 +121,7 @@ class _Turn:
     out: list[Out] = field(default_factory=list)
     llm: dict[str, Any] = field(default_factory=dict)    # meta do LLM neste turno, vai na mensagem terminal
     extra: dict[str, Any] = field(default_factory=dict)  # o que o turno decidiu e vale em TODAS as mensagens dele (ex.: o veredito da pre-checagem)
+    limiter_wait_s: float = 0.0                           # tempo parado no limitador de taxa (e no backoff de 429) nas chamadas ao LLM deste turno, soma das tentativas
 
     @property
     def trace(self) -> str:
@@ -389,11 +390,11 @@ class Orchestrator:
         outcome = self._call_with_retry(t, message, [*lead_texts, text])
         if isinstance(outcome, tuple):                   # falha dura: (componente, codigo, resultado do provedor, se houve)
             component, code, res = outcome
-            t.llm = self._result_meta(res)
+            t.llm = self._timing({**self._result_meta(res)}, t)
             self._fail(t, HandoffReason.SAFETY_GUARD, component, detail=self._detail_text(code, res),
                        lead_in=templates.SAFETY if component is FailedComponent.MASKER else templates.LLM_DOWN)
             return None
-        t.llm = self._llm_meta(outcome)
+        t.llm = self._timing(self._llm_meta(outcome), t)
         if outcome.kind == "ok":
             conv.streak = 0
             return outcome.gres
@@ -421,9 +422,12 @@ class Orchestrator:
             except QuotaExhausted:
                 return FailedComponent.LLM, "cota_diaria", None
             except ProtocolError as exc:
+                t.limiter_wait_s += exc.result.wait_s
                 return self._protocol_failure(exc.result, attempt)
             except ServiceUnstable as exc:
+                t.limiter_wait_s += exc.result.wait_s
                 return FailedComponent.LLM, "servico_instavel", exc.result
+            t.limiter_wait_s += gres.result.wait_s
             error = gres.result.error
             klass = outcome_class(error)
             if is_protocol_error(gres.result):           # um LLM sem o limitador devolve o 4xx como resultado; a regra e a mesma
@@ -467,6 +471,14 @@ class Orchestrator:
         if "e" in box:
             raise box["e"]
         return box["r"]
+
+    @staticmethod
+    def _timing(meta: dict[str, Any], t: _Turn) -> dict[str, Any]:
+        """`limiter_wait_s`: quanto do turno foi espera do limitador (espacamento artificial entre requisicoes), para a latencia reportada ser a do SISTEMA. Ausente = zero.
+        Num timeout do turno o tempo parado nao e conhecido (a chamada e abandonada ainda dormindo)."""
+        if t.limiter_wait_s > 0:
+            meta["limiter_wait_s"] = round(t.limiter_wait_s, 3)
+        return meta
 
     def _llm_meta(self, o: _LLMOutcome) -> dict[str, Any]:
         return {"attempt": o.attempt, **self._result_meta(o.gres.result if o.gres else None)}

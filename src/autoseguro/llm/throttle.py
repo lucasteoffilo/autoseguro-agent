@@ -19,7 +19,7 @@ import json
 import time
 from collections import deque
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, date, datetime
 from pathlib import Path
 
@@ -102,8 +102,9 @@ class RateLimiter:
         self._window: deque[float] = deque()
         self._last: float | None = None
 
-    def wait(self) -> None:
-        now = self._clock()
+    def wait(self) -> float:
+        """Espera a vez e devolve QUANTO esperou (pelo relogio do proprio limitador): quem reporta latencia desconta isto, que e espacamento artificial e nao tempo de sistema."""
+        started = now = self._clock()
         if self._last is not None and now < self._last + self._gap:
             self._sleep(self._last + self._gap - now)
             now = self._clock()
@@ -116,6 +117,7 @@ class RateLimiter:
                 self._window.popleft()
         self._window.append(now)
         self._last = now
+        return max(0.0, now - started)
 
 
 class QuotaLog:
@@ -210,11 +212,12 @@ class ThrottledLLM:
         return f"ThrottledLLM({self._inner!r})"
 
     def turn(self, user_message: str) -> LLMResult:
-        attempt = 0
+        """Uma chamada logica ao provedor, com o backoff de 429. O `wait_s` do resultado soma o que ficou PARADO nela (o limitador antes de cada requisicao e os sleeps do backoff)."""
+        attempt, waited = 0, 0.0
         while True:
             if self._quota.remaining() <= 0:
                 raise QuotaExhausted(f"cota diaria de {self._quota.daily_limit} requisicoes esgotada (dia UTC {self._quota.utc_day()})")
-            self._limiter.wait()
+            waited += self._limiter.wait() or 0.0
             res = self._inner.turn(user_message)
             self.requests += 1
             self._quota.record_request(self.provider, self.model, res.error or "ok", res.http_status)
@@ -222,18 +225,19 @@ class ThrottledLLM:
                 self._on_event(f"requisicao {self._quota.used_today()}/{self._quota.daily_limit} hoje ({res.error or 'ok'})")
             if res.http_status == 429 and res.quota_kind == "daily":
                 self._quota.mark_exhausted(self.provider, self.model)
-                return res
+                return replace(res, wait_s=waited)
             if self._fail_fast and is_protocol_error(res):
-                raise ProtocolError(res)  # ja foi contada acima; nada de repetir
+                raise ProtocolError(replace(res, wait_s=waited))  # ja foi contada acima; nada de repetir
             if is_backoff_status(res) and attempt < self._max_retries:
                 wait = min(self._cap, max(res.retry_after_s or 0.0, self._base * 2**attempt))
                 self.retries += 1
                 if self._on_event:
                     self._on_event(f"{res.http_status}: espera {wait:.1f}s e tenta de novo ({attempt + 1}/{self._max_retries})")
                 self._sleep(wait)
+                waited += wait
                 attempt += 1
                 continue
-            return self._settle(res)
+            return self._settle(replace(res, wait_s=waited))
 
     def _settle(self, res: LLMResult) -> LLMResult:
         """Resultado final da chamada (depois do backoff): alimenta o disjuntor de falhas seguidas do servico."""

@@ -39,6 +39,7 @@ class LLMResult:
     quota_kind: str | None = None        # num 429: "daily" (esgotou o dia) | "rate" (limite por minuto ou do provedor)
     detail: str | None = None            # explicacao curta do provedor, JA sem segredos
     served_model: str | None = None      # o modelo que de fato respondeu (o roteador pode trocar)
+    wait_s: float = 0.0                  # tempo PARADO antes de a resposta chegar: espera do limitador de taxa e sleeps do backoff de 429. Nao e tempo do provedor nem do sistema
 
 
 class LLMClient(Protocol):
