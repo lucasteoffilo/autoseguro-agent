@@ -17,7 +17,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path[:0] = [str(ROOT / "src")]
 
-from autoseguro.logexport import ExportRefused, export_markdown, index_markdown, latest_trace, list_traces  # noqa: E402
+from autoseguro.logexport import ExportRefused, Origins, export_markdown, index_markdown, latest_trace, list_traces, origins_of  # noqa: E402
 from autoseguro.store import Store  # noqa: E402
 
 
@@ -36,6 +36,10 @@ def export_all(store: Store, out_dir: Path) -> int:
             refused.append(f"{t}: {exc}")
     (out_dir / "index.md").write_text(index_markdown(store, traces, files=files), encoding="utf-8")
     print(f"{len(files)} de {len(traces)} conversas exportadas em {out_dir}/ (index.md lista todas)")
+    total = Origins()
+    for t in traces:
+        total += origins_of(store.messages(t))
+    print(f"texto do modelo: {total.counts['llm']} de {total.total} respostas ao lead; barrados pelo guardrail: {total.counts['barrado']}")
     for line in refused:
         print(f"RECUSADA pela varredura de PII, nada escrito: {line}", file=sys.stderr)
     return 3 if refused else 0

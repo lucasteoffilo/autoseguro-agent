@@ -8,6 +8,8 @@ from __future__ import annotations
 
 import json
 import re
+from collections import Counter
+from dataclasses import dataclass, field
 from typing import Any
 
 from .masker import cpf_is_valid
@@ -50,6 +52,81 @@ def _fmt_meta(meta: dict[str, Any]) -> str:
     return "; ".join(parts) or "—"
 
 
+# --- de onde veio cada texto que o lead leu --------------------------------------------------------------------------------------------------------
+# Cada mensagem do agente (menos o "um instante") traz em `meta` o `reply_source` e, se o guardrail barrou o texto do modelo, as regras (`violations`). Seis origens:
+BUCKETS = (
+    ("llm", "Texto do modelo, entregue", "`llm`"),
+    ("barrado", "Texto do modelo barrado pelo guardrail", "`template_fallback`"),
+    ("sem_saida", "Sem saída utilizável do modelo (falha, filtro do provedor, saída inválida)", "`template_fallback`, `sem_saida`"),
+    ("trocado_orquestrador", "Texto do modelo trocado pelo orquestrador (não perguntava o dado pendente, ou tinha PII)", "`template_question`"),
+    ("trocado_produto", "Trocado por desenho (a pergunta de necessidade e as confirmações são do produto)", "`template_question`"),
+    ("template", "Template por desenho (risco, cotação, recusa, handoff, estado, mídia)", "`template_*`"),
+)
+CANDIDATES = ("llm", "barrado", "sem_saida", "trocado_orquestrador")   # as vezes em que o texto do modelo PODERIA ter chegado ao lead
+
+
+@dataclass
+class Origins:
+    counts: Counter = field(default_factory=Counter)
+    rules: Counter = field(default_factory=Counter)      # regra do guardrail -> quantas mensagens barrou
+    sources: Counter = field(default_factory=Counter)    # reply_source dos templates por desenho
+
+    @property
+    def total(self) -> int:
+        return sum(self.counts.values())
+
+    @property
+    def candidates(self) -> int:
+        return sum(self.counts[b] for b in CANDIDATES)
+
+    def __iadd__(self, other: Origins) -> Origins:
+        self.counts += other.counts
+        self.rules += other.rules
+        self.sources += other.sources
+        return self
+
+
+def classify_reply(meta: dict[str, Any]) -> tuple[str, list[str]]:
+    """(origem, regras do guardrail) de uma mensagem do agente, a partir do `meta` que o orquestrador gravou."""
+    source, violations = meta.get("reply_source", ""), list(meta.get("violations") or [])
+    if source == "llm":
+        return "llm", []
+    if source == "template_fallback":
+        return ("sem_saida", []) if violations == ["sem_saida"] else ("barrado", violations)
+    if source == "template_question":
+        asked = meta.get("asked") or []
+        return ("trocado_produto", []) if (len(asked) == 2 and (asked[1] == "confirm" or asked[0] == "necessidade")) else ("trocado_orquestrador", [])
+    return "template", []
+
+
+def origins_of(messages: list[dict[str, Any]]) -> Origins:
+    o = Origins()
+    for m in messages:
+        if m["role"] != "agent" or m["kind"] == "hold":
+            continue
+        meta = json.loads(m["meta"])
+        bucket, rules = classify_reply(meta)
+        o.counts[bucket] += 1
+        o.rules.update(rules)
+        if bucket == "template":
+            o.sources[meta.get("reply_source") or "sem reply_source"] += 1
+    return o
+
+
+def _pct(n: int, d: int) -> str:
+    return "—" if d == 0 else f"{100 * n / d:.0f}%"
+
+
+def origin_lines(o: Origins) -> list[str]:
+    """A tabela de origens e a fracao do modelo, em Markdown."""
+    detail = {"barrado": ", ".join(f"{r} ×{n}" for r, n in sorted(o.rules.items())), "template": ", ".join(f"{s} ×{n}" for s, n in sorted(o.sources.items()))}
+    rows = ["| Origem | Mensagens | `reply_source` | Detalhe |", "|---|---|---|---|"]
+    rows += [f"| {label} | {o.counts[key]} | {source} | {detail.get(key, '') or '—'} |" for key, label, source in BUCKETS]
+    llm = o.counts["llm"]
+    return rows + ["", f"**Fração do modelo:** {llm} de {o.total} respostas ao lead ({_pct(llm, o.total)}); {llm} de {o.candidates} em que o texto do modelo poderia ter chegado ({_pct(llm, o.candidates)}). "
+                       f"**Barrados pelo guardrail:** {o.counts['barrado']} ({_pct(o.counts['barrado'], o.candidates)} das vezes em que o texto do modelo poderia ter chegado)."]
+
+
 def export_markdown(store: Store, trace_id: str) -> str:
     rec = store.reconstruct(trace_id)
     conv, msgs, quotes, handoff = rec["conversation"], rec["messages"], rec["quotes"], rec["handoff"]
@@ -70,6 +147,7 @@ def export_markdown(store: Store, trace_id: str) -> str:
            f"| Existe falha seguida de retry visível | {'sim: ' + str(len(retries)) + ' tentativa(s) com decisão `retry`' if retries else '**não** (use uma semente/API que falhe antes de acertar)'} |",
            f"| Todo `R$` dito pelo agente existe numa cotação `ok` desta conversa | {'sim (' + str(len(agent_money)) + ' valor(es))' if not unbacked else '**NÃO**: ' + ', '.join(unbacked)} |",
            "| Sem PII nem segredo no texto exportado | (conferido ao final: a exportação é recusada se houver) |", "",
+           "## De onde veio cada texto que o lead leu", "", *origin_lines(origins_of(msgs)), "",
            "## Transcrição", "", "| # | Quando (UTC) | Quem | Tipo | Texto (já mascarado) |", "|---|---|---|---|---|"]
     for m in msgs:
         out.append(f"| {m['seq']} | {m['ts'][11:23]} | {'lead' if m['role'] == 'lead' else 'agente'} | {m['kind']} | {_cell(m['text'])} |")
@@ -111,15 +189,20 @@ def list_traces(store: Store) -> list[str]:
 
 def index_markdown(store: Store, traces: list[str], *, files: dict[str, str] | None = None) -> str:
     """Uma tabela com uma linha por conversa: desfecho, motivo, cotacoes, tentativas com retry, mensagens. So metadados (nada de texto de mensagem), mas passa pela mesma varredura."""
-    rows = ["# Conversas exportadas", "", "| Conversa | Desfecho | Motivo / componente | LLM | Cotacoes (ok/recusa/fora) | Retries da /quote | Mensagens | Arquivo |", "|---|---|---|---|---|---|---|---|"]
+    rows = ["# Conversas exportadas", "", "| Conversa | Desfecho | Motivo / componente | LLM | Cotacoes (ok/recusa/fora) | Retries da /quote | Mensagens | Texto do modelo / respostas | Barrados | Arquivo |",
+            "|---|---|---|---|---|---|---|---|---|---|"]
+    total = Origins()
     for t in traces:
         rec = store.reconstruct(t)
         c, qs = rec["conversation"], rec["quotes"]
         reason = (c["handoff_reason"] or "—") + (f" / {c['failed_component']}" if c["failed_component"] else "")
         status = {s: sum(1 for q in qs if q["status"] == s) for s in ("ok", "refused", "unavailable")}
         retries = sum(1 for q in qs for a in q["attempts"] if a["decision"] == "retry")
+        o = origins_of(rec["messages"])
+        total += o
         rows.append(f"| `{t}` | {c['status']} | {reason} | {c['llm_provider']}/{c['llm_model']} | {status['ok']}/{status['refused']}/{status['unavailable']} | {retries} | {len(rec['messages'])} | "
-                    f"{('[' + files[t] + '](' + files[t] + ')') if files and t in files else '—'} |")
+                    f"{o.counts['llm']}/{o.total} | {o.counts['barrado']} | {('[' + files[t] + '](' + files[t] + ')') if files and t in files else '—'} |")
+    rows += ["", f"## Total das {len(traces)} conversas: de onde veio cada texto que o lead leu", "", *origin_lines(total)]
     text = "\n".join(rows) + "\n"
     found = scan(text)
     if found:

@@ -128,3 +128,89 @@ def test_export_all_skips_only_the_conversation_that_the_scan_refuses_and_exits_
     assert (out / f"{h.trace}.md").exists() and not (out / f"{bad}.md").exists() and (out / "index.md").exists()
     err = capsys.readouterr().err
     assert bad in err and V["email"] not in err
+
+
+# --- de onde veio cada texto que o lead leu: modelo contra template, e por que o guardrail barrou -----------------------------------------------------------
+from autoseguro.logexport import Origins, classify_reply, origins_of  # noqa: E402
+from tests.hostile import HostileOnTurn  # noqa: E402
+from tests.test_orchestrator import BASE, ScriptedLLM, reply_json  # noqa: E402
+
+
+@pytest.mark.parametrize("meta,bucket,rules", [
+    ({"reply_source": "llm"}, "llm", []),
+    ({"reply_source": "template_fallback", "violations": ["R1_dinheiro", "R3_prazo_ou_contato"]}, "barrado", ["R1_dinheiro", "R3_prazo_ou_contato"]),
+    ({"reply_source": "template_fallback", "violations": ["sem_saida"], "llm_error": "content_filter"}, "sem_saida", []),
+    ({"reply_source": "template_question", "asked": ["veiculo_ano", "ask"]}, "trocado_orquestrador", []),
+    ({"reply_source": "template_question", "asked": ["necessidade", "ask"]}, "trocado_produto", []),
+    ({"reply_source": "template_question", "asked": ["idade", "confirm"]}, "trocado_produto", []),
+    ({"reply_source": "template_risk"}, "template", []), ({"reply_source": "template_quote"}, "template", []), ({"reply_source": "template_state"}, "template", []),
+    ({}, "template", []),
+])
+def test_each_reply_source_lands_in_exactly_one_bucket(meta, bucket, rules):
+    assert classify_reply(meta) == (bucket, rules)
+
+
+def test_a_normal_conversation_splits_into_model_text_product_questions_and_templates():
+    h = Harness(ess())
+    h.run(*HAPPY)
+    o = origins_of(h.store.messages(h.trace))
+    assert dict(o.counts) == {"llm": 2, "trocado_produto": 1, "template": 1} and o.total == 4 and o.candidates == 2
+    assert dict(o.sources) == {"template_quote": 1}
+    md = export_markdown(h.store, h.trace)
+    assert "## De onde veio cada texto que o lead leu" in md
+    assert "| Texto do modelo, entregue | 2 | `llm` | — |" in md
+    assert "**Fração do modelo:** 2 de 4 respostas ao lead (50%); 2 de 2 em que o texto do modelo poderia ter chegado (100%). **Barrados pelo guardrail:** 0 (0% das vezes" in md
+
+
+def test_a_reply_the_guardrail_blocked_is_counted_with_the_rule_that_blocked_it():
+    h = Harness(llm=HostileOnTurn(BASE, "Um consultor te liga amanhã com um desconto.", at=0))
+    h.say(GREET)
+    o = origins_of(h.store.messages(h.trace))
+    assert o.counts["barrado"] == 1 and o.counts["llm"] == 0 and set(o.rules) >= {"R3_prazo_ou_contato", "R4_desconto_ou_condicao"}
+    md = export_markdown(h.store, h.trace)
+    assert "| Texto do modelo barrado pelo guardrail | 1 | `template_fallback` | R3_prazo_ou_contato ×1" in md
+    assert "**Barrados pelo guardrail:** 1 (100% das vezes" in md
+    assert "Um consultor te liga" not in md, "o texto barrado nao e exportado, so a regra"
+
+
+def test_a_provider_filter_is_not_counted_as_a_guardrail_block_and_neither_is_the_orchestrators_swap():
+    h = Harness(failures=["content_filter", "content_filter"])
+    h.say(GREET)
+    assert dict(origins_of(h.store.messages(h.trace)).counts) == {"sem_saida": 1}
+    h2 = Harness(llm=ScriptedLLM(reply_json("Anotado!")))      # nao pergunta o dado pendente: o orquestrador usa a pergunta do produto
+    h2.say(GREET)
+    assert dict(origins_of(h2.store.messages(h2.trace)).counts) == {"trocado_orquestrador": 1}
+
+
+def test_the_hold_message_is_not_a_reply():
+    from tests.fakes import Step
+    h = Harness(Step(3.0, 200, __import__("tests.fakes", fromlist=["ok_body"]).ok_body("essencial", 119.9)))
+    h.run(*HAPPY)
+    assert any(m["kind"] == "hold" for m in h.agent) and origins_of(h.store.messages(h.trace)).total == len([m for m in h.agent if m["kind"] != "hold"])
+
+
+def test_the_index_has_the_fraction_per_conversation_and_the_total(tmp_path):
+    from tools import export_log
+    db = tmp_path / "run.db"
+    h = Harness(ess(), store=Store(db))
+    h.run(*HAPPY)
+    t2 = h.orc.start()
+    h.orc.handle(t2, GREET)
+    t3 = h.orc.start()
+    h.orc.handle(t3, "prefiro falar com uma pessoa")
+    out = tmp_path / "logs"
+    assert export_log.main(["--db", str(db), "--trace", "all", "--out", str(out)]) == 0
+    index = (out / "index.md").read_text(encoding="utf-8")
+    assert f"| `{h.trace}` | quoted |" in index and "| 2/4 | 0 |" in index and f"| `{t2}` | open |" in index and "| 1/1 | 0 |" in index and f"| `{t3}` | handoff | HUMAN_REQUESTED |" in index and "| 0/1 | 0 |" in index
+    assert "## Total das 3 conversas: de onde veio cada texto que o lead leu" in index
+    assert "**Fração do modelo:** 3 de 6 respostas ao lead (50%); 3 de 3 em que o texto do modelo poderia ter chegado (100%)." in index
+    assert "prefiro falar" not in index
+
+
+def test_the_cli_prints_the_total_fraction(tmp_path, capsys):
+    from tools import export_log
+    db = tmp_path / "run.db"
+    h = Harness(llm=HostileOnTurn(BASE, "Hoje mesmo você já fica coberto.", at=0), store=Store(db))
+    h.say(GREET)
+    assert export_log.main(["--db", str(db), "--trace", "all", "--out", str(tmp_path / "logs")]) == 0
+    assert "texto do modelo: 0 de 1 respostas ao lead; barrados pelo guardrail: 1" in capsys.readouterr().out
