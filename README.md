@@ -35,12 +35,31 @@ make api-test-up && make chat ARGS="--api http://localhost:8100"
 
 **Evals e log:** `make evals` roda os cenários sintéticos de handoff e as conversas derivadas do dataset (se `DATASET_PATH` existir) contra o serviço vendorizado em processo, grava [`evals/results/`](evals/results/report.md) e **sai com 1 se um critério quebrar**; `make evals-api` faz o mesmo contra a API HTTP de teste. `make export-log TRACE=trc_…` exporta o log de **uma** execução (transcrição, decisões, tentativas da `/quote`, tudo mascarado e varrido) em Markdown. `make verify-clean` prova o repo num container 3.12 limpo.
 
+O dataset do desafio **não está neste repo** (higiene: nenhuma linha dele entra aqui). Sem ele, `make test` pula 2 testes com o motivo (`DATASET_PATH ausente`) e `make evals` roda só os cenários sintéticos; para a população inteira, aponte `DATASET_PATH` para o `conversations.parquet` (o padrão do `Makefile` é `../namastex-fde-challenge/dataset/conversations.parquet`).
+
 `make smoke-llm-dry` roda o `smoke-llm` com um LLM de mentira (sem chave, sem rede).
 Com o modelo de verdade pelo OpenRouter: copie `.env.example` para `.env` e preencha `LLM_API_KEY` (ou `OPENROUTER_API_KEY`). **Primeiro `make llm-ping`**: uma única requisição real que confere a autenticação, se o OpenRouter aceita o pedido como montado (`json_schema` + `require_parameters`), se o modelo devolve saída válida e a latência dessa amostra; confirma que a chave está setada sem mostrar valor, prefixo nem tamanho.
 Depois `make smoke-llm`: gasta **31 requisições** (1 aquecimento + 15 mensagens × 2 repetições), respeita 20 por minuto, conta cada chamada em `var/smoke/quota.jsonl` e aborta antes de gastar se a cota não cobrir. O limite diário é o que o **provedor informa** em `GET /key` (50 abaixo de 10 créditos comprados, 1000 a partir de 10), com 50 de fallback. **Falha rápido:** o primeiro erro de protocolo (qualquer 4xx fora 408 e 429: 400, 401, 402, 403, 404…) aborta na hora e custa uma requisição, não 31; só o 429 por minuto e as falhas do serviço (408, 5xx) entram em backoff, e três chamadas seguidas que ainda falham depois dele abortam também. `make smoke-llm-anthropic` é o mesmo smoke pela API direta da Anthropic (opcional).
 `make test` roda os testes unitários e de higiene do repositório. `make test-integration` sobe a API de cotação
 determinística (porta 8100, sem falhas) e roda os testes que dependem dela. `make api-up` sobe a API com a instabilidade
 padrão do desafio na porta 8000. As análises estão em [`analysis/`](analysis/README.md).
+
+## Como rodar com LLM real
+
+A chave fica só no `.env` (ignorado pelo git). Cada execução grava as conversas e as chamadas à `/quote` no SQLite (`--db`), e o log sai dele em Markdown.
+
+```bash
+cp .env.example .env                           # preencha LLM_API_KEY (ou OPENROUTER_API_KEY)
+make setup
+QUOTE_SEED=91 make api-up                      # API com falha reproduzível: a 1ª /quote dá 500 e a 2ª passa
+make llm-ping                                  # 1 requisição ao LLM: chave, formato do pedido, latência, cota restante
+make chat ARGS="--llm real --db var/demo.db"
+make export-logs DB=var/demo.db OUT=var/demo   # um .md por conversa + index.md, mascarado e varrido
+```
+
+- **Sementes:** com `QUOTE_SEED=91`, a 1ª `/quote` falha com 500 e as seguintes passam; com `QUOTE_SEED=80`, a 1ª demora 8 s e aparece o "um instante". A sequência recomeça a cada subida da API (`make api-down && QUOTE_SEED=80 make api-up`). `make probe-seed SEED=91` confere a semente contra a API sem LLM.
+- Sem chave, o mesmo caminho roda com o mock: tire o `--llm real`. Cada mensagem de texto é 1 requisição ao LLM, dentro do limite diário do provedor.
+- Os cenários, o que digitar em cada um e o que olhar no log: [`docs/DEMO.md`](docs/DEMO.md).
 
 ## Decisões
 
