@@ -14,6 +14,7 @@ from typing import Any
 
 from .masker import cpf_is_valid
 from .pii import find_pii
+from .rejection import REJECTED_NOTE, rejected_lead_ids
 from .store import Store, money_in
 
 _ELEVEN = re.compile(r"(?<![\d.-])\d{11}(?![\d.-])")
@@ -191,8 +192,10 @@ def export_markdown(store: Store, trace_id: str) -> str:
            "| Sem PII nem segredo no texto exportado | (conferido ao final: a exportação é recusada se houver) |", "",
            "## De onde veio cada texto que o lead leu", "", *origin_lines(origins_of(msgs)), "", "### Textos do modelo barrados pelo guardrail", "", *blocked_lines(msgs), "",
            "## Transcrição", "", "| # | Quando (UTC) | Quem | Tipo | Texto (já mascarado) |", "|---|---|---|---|---|"]
+    refused = rejected_lead_ids(msgs)
     for m in msgs:
-        out.append(f"| {m['seq']} | {m['ts'][11:23]} | {'lead' if m['role'] == 'lead' else 'agente'} | {m['kind']} | {_cell(m['text'])} |")
+        kind = f"{m['kind']} · {REJECTED_NOTE}" if m["id"] in refused else m["kind"]    # fica no banco, nao volta ao modelo
+        out.append(f"| {m['seq']} | {m['ts'][11:23]} | {'lead' if m['role'] == 'lead' else 'agente'} | {kind} | {_cell(m['text'])} |")
 
     out += ["", "## Decisões do agente, mensagem a mensagem", "", "| # | Tipo | Registro (`meta`) |", "|---|---|---|"]
     for m in msgs:

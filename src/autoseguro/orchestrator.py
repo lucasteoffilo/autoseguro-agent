@@ -41,6 +41,7 @@ from .media import media_kind
 from .precheck import Rules, precheck
 from .quote_client import InvalidInput, Quote, QuoteClient, RealClock, Refused, Unavailable
 from .refusals import Limits, RefusalKind, classify_motive
+from .rejection import rejected_lead_ids
 from .slots import QuoteRequest
 from .store import RandomIds, SqliteSink, Store, brl, money_in, utc_now
 
@@ -745,8 +746,10 @@ class Orchestrator:
             pass
 
     def _history(self, trace_id: str) -> tuple[list[tuple[str, str]], list[str]]:
-        """(historico para o prompt, textos do lead). Tudo ja mascarado; sem cotacao, recusa nem handoff (nada de preco volta ao modelo)."""
-        msgs = [m for m in self._store.messages(trace_id) if m["role"] == "lead" or m["kind"] in HISTORY_KINDS]
+        """(historico para o prompt, textos do lead). Tudo ja mascarado; sem cotacao, recusa nem handoff (nada de preco volta ao modelo) e sem a mensagem que o provedor rejeitou."""
+        every = self._store.messages(trace_id)
+        refused = rejected_lead_ids(every)               # o que o provedor rejeitou fica no banco, mas nao volta ao modelo (ver rejection.py)
+        msgs = [m for m in every if (m["role"] == "lead" or m["kind"] in HISTORY_KINDS) and m["id"] not in refused]
         msgs = msgs[:-1][-HISTORY_WINDOW:]               # a ultima e a mensagem de AGORA, que vai separada
         return ([("lead" if m["role"] == "lead" else "assistente", m["text"]) for m in msgs], [m["text"] for m in msgs if m["role"] == "lead"])
 
