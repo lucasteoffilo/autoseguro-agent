@@ -1,0 +1,583 @@
+"""Orquestrador: a maquina de estados de uma conversa, uma mensagem por vez. Quem decide o proximo passo e o ESTADO, nao o LLM.
+
+Ordem de um turno (o que sai da funcao `handle` e o que o lead le):
+
+  1. dedupe pelo id da mensagem no canal (reentrega devolve as respostas ja enviadas e nao reprocessa nada);
+  2. MASCARAR, antes de qualquer outra coisa. O texto cru nao sai de `handle`: nem o LLM, nem o banco, nem o log o veem. O que o mascarador
+     deixar passar e conferido pelo detector de PII (`residual_pii`); se ainda achar algo, o turno termina em SAFETY_GUARD (componente masker);
+  3. o LLM (`GuardedLLM`, o mesmo para o mock e para o modelo real) PROPOE slots e intencao; o `SlotLedger` decide o que vale (ancoragem, D5);
+  4. a resposta: intencoes de RISCO e de handoff, cotacao, recusa e confirmacoes saem de TEMPLATE; o LLM so escreve a conversa neutra (D6);
+  5. a cotacao so sai de `QuoteGate`, e todo "R$" da mensagem e conferido contra o numero que a API devolveu antes de enviar.
+
+Garantias (cada uma tem teste): exatamente UMA mensagem terminal por turno; nenhuma excecao deixa o lead sem resposta (vira handoff
+`SAFETY_GUARD` com componente `orchestrator`); o turno nao passa do teto de 20s (o LLM roda numa thread com prazo; a `/quote` recebe so o que sobrou);
+o pacote de handoff e gravado no SQLite ANTES de a resposta ir ao lead, e a entrega a outros destinos vem depois.
+
+LIMITE ASSUMIDO: o estado da conversa (livro-razao, pergunta pendente, cotacao exibida) vive na memoria do processo; o SQLite guarda o registro
+(mensagens, cotacoes, tentativas, handoff, snapshot dos slots), nao o estado vivo. Reiniciar o processo encerra a conversa, nao a apaga.
+"""
+from __future__ import annotations
+
+import re
+import threading
+from collections.abc import Callable, Mapping, Sequence
+from dataclasses import dataclass, field, replace
+from datetime import date, datetime
+from typing import Any
+
+from . import budgets, questions, templates
+from .anchoring import NotQuotable, QuoteGate, SlotLedger, implied_tier, is_affirmative, is_negative, plano_for, read_text
+from .facts import FactBase, strip_accents
+from .handoff import (MAX_RECENT_MESSAGES, FailedComponent, HandoffPackage, HandoffReason, HandoffSink, MaskedMessage, QuoteRef, SinkRejected,
+                      SinkUnavailable)
+from .llm.base import LLMResult, outcome_class
+from .llm.guarded import GuardedLLM, GuardedResult, UnsafePayload
+from .llm.prompt import build_user_message
+from .llm.throttle import ProtocolError, QuotaExhausted, ServiceUnstable
+from .masker import Masker, residual_pii
+from .quote_client import InvalidInput, Quote, QuoteClient, RealClock, Refused, Unavailable
+from .refusals import Limits, RefusalKind, classify_motive
+from .slots import QuoteRequest
+from .store import RandomIds, SqliteSink, Store, brl, money_in, utc_now
+
+ORDER = ("veiculo_ano", "idade", "cep", "necessidade", "data_inicio")   # a ordem em que o agente pergunta (PLAN, secao 8)
+MAX_LEAD_CHARS = 2000
+HISTORY_WINDOW = 6
+HISTORY_KINDS = ("text", "question", "confirmation", "fallback")        # o que volta ao LLM como historico: nada de cotacao nem de handoff
+RESERVE_S = 1.0                                                          # folga para o turno terminar com a mensagem terminal
+COVERAGE_INTENTS = ("ask_coverage_question", "question_not_in_facts")    # respondidos por template; se a cotacao sai no mesmo turno, vao antes dela
+DATA_ISSUE_REASON = HandoffReason.DATA_AMBIGUOUS
+# O que a pergunta do LLM precisa citar para valer como a pergunta que o ESTADO pede (quem decide o proximo passo e o orquestrador, nao o modelo).
+_TOPIC = {"veiculo_ano": re.compile(r"\bano\b"), "idade": re.compile(r"\bidade\b|\banos\b"), "cep": re.compile(r"\bcep\b"),
+          "data_inicio": re.compile(r"\b(dia|data|comec\w*|inicio|vigencia)\b")}
+
+
+class PriceInvariantError(RuntimeError):
+    """Uma mensagem trazia um valor em reais que a API nao devolveu. Nunca chega ao lead: o turno vira handoff."""
+
+
+# --- resultado do turno -------------------------------------------------------------------------------------------------------------------------
+@dataclass(frozen=True)
+class Out:
+    kind: str                # hold | question | confirmation | text | quote | refusal | handoff | fallback | closed
+    text: str
+    msg_id: str
+    terminal: bool = True    # so o "um instante" (hold) nao e terminal
+
+
+@dataclass(frozen=True)
+class TurnResult:
+    trace_id: str
+    messages: tuple[Out, ...]
+    status: str              # status da conversa depois do turno: open | quoted | refused | handoff
+    elapsed_s: float
+    duplicate: bool = False
+
+    @property
+    def terminal(self) -> tuple[Out, ...]:
+        return tuple(m for m in self.messages if m.terminal)
+
+
+@dataclass(frozen=True)
+class _Next:
+    slot: str
+    kind: str                # "ask" | "confirm"
+    text: str
+
+
+@dataclass
+class _Conv:
+    trace_id: str
+    ledger: SlotLedger = field(default_factory=SlotLedger)
+    status: str = "open"
+    asked: tuple[str, str] | None = None      # (slot, "ask" | "confirm"): o que a ultima mensagem do agente perguntou
+    objections: int = 0
+    pending_offer: str | None = None          # plano alternativo oferecido e ainda sem resposta
+    last_quote: Quote | None = None
+    last_ref: QuoteRef | None = None
+    quoted_payload: dict[str, Any] | None = None   # a ultima cotacao PRINCIPAL exibida (para nao recotar sem mudanca)
+    streak: int = 0                           # turnos seguidos sem saida utilizavel do LLM (filtro do provedor, saida invalida)
+    undelivered: list[tuple[HandoffSink, HandoffPackage]] = field(default_factory=list)
+
+
+@dataclass
+class _Turn:
+    conv: _Conv
+    arrived: float
+    send: Callable[[Out], None] | None
+    out: list[Out] = field(default_factory=list)
+    llm: dict[str, Any] = field(default_factory=dict)    # meta do LLM neste turno, vai na mensagem terminal
+
+    @property
+    def trace(self) -> str:
+        return self.conv.trace_id
+
+    @property
+    def has_terminal(self) -> bool:
+        return any(o.terminal for o in self.out)
+
+
+@dataclass(frozen=True)
+class _LLMOutcome:
+    kind: str                # ok | blocked | unusable | service
+    gres: GuardedResult | None
+    error: str | None
+    attempt: int
+
+
+class Orchestrator:
+    def __init__(self, *, llm: GuardedLLM, store: Store, quote_client: QuoteClient, planos: Mapping[str, Any], fact_base: FactBase | None = None,
+                 masker: Masker | None = None, sinks: Sequence[HandoffSink] = (), ids: Any = None, clock: Any = None,
+                 today: Callable[[], date] = date.today, handoff_next_step: str = "", mode: str = "mock",
+                 turn_ceiling_s: float = budgets.TURN_CEILING_S, hold_after_s: float = budgets.HOLD_AFTER_S) -> None:
+        self._llm, self._store, self._planos = llm, store, planos
+        self._facts = fact_base or FactBase.from_planos(planos)
+        self._masker = masker or Masker()
+        self._gate = QuoteGate(quote_client, planos)
+        self._limits = Limits.from_planos(planos)       # os numeros que o texto de recusa cita saem do /planos, nao do codigo
+        self._record_sink = SqliteSink(store)           # o registro de rastreabilidade: sempre existe, e e o primeiro a receber o pacote
+        self._sinks = tuple(sinks)                      # CRM, fila... ALEM do SQLite, nunca no lugar
+        self._ids = ids or RandomIds()
+        self._clock = clock or RealClock()
+        self._today, self._next_step, self._mode = today, handoff_next_step, mode
+        self._ceiling, self._hold_after = turn_ceiling_s, hold_after_s
+        self._convs: dict[str, _Conv] = {}
+
+    # --- API ------------------------------------------------------------------------------------------------------------------------------------
+    def start(self) -> str:
+        trace = self._ids.new("trc")
+        self._store.open_conversation(trace, mode=self._mode, provider=self._llm.provider, model=self._llm.model, now=utc_now())
+        self._convs[trace] = _Conv(trace)
+        return trace
+
+    def handle(self, trace_id: str, text: str, *, external_id: str | None = None, send: Callable[[Out], None] | None = None) -> TurnResult:
+        """Processa UMA mensagem do lead. `send` recebe cada mensagem do agente assim que existe (o "um instante" sai no meio do turno)."""
+        arrived = self._clock.now()
+        conv = self._convs[trace_id]
+        if external_id and (prev := self._store.message_by_external(trace_id, external_id)):
+            return TurnResult(trace_id, self._replay(trace_id, prev["seq"]), conv.status, 0.0, duplicate=True)
+
+        masked = self._masker.mask(text[:MAX_LEAD_CHARS])
+        truncated = len(text) > MAX_LEAD_CHARS
+        text = ""                                       # daqui para a frente so existe a versao mascarada
+        leftover = residual_pii(masked.text)            # o gate de envio conferindo o mascarador
+        shown = masked.text if not leftover else "[mensagem não registrada: dado sensível não mascarado]"
+        meta = {"mask_kinds": list(masked.kinds), **({"truncated": True} if truncated else {}), **({"residual_pii": leftover} if leftover else {})}
+        self._store.add_message(trace_id, self._ids.new("msg"), role="lead", kind="text", text=shown, ts=utc_now(), status="processed",
+                                external_id=external_id, meta=meta)
+
+        t = _Turn(conv, arrived, send)
+        try:
+            if leftover:
+                self._fail(t, HandoffReason.SAFETY_GUARD, FailedComponent.MASKER, detail="pii_residual:" + ",".join(leftover))
+            elif not masked.text.strip():
+                self._say(t, "fallback", templates.NOT_UNDERSTOOD, meta={"reply_source": "template_fallback"})
+            else:
+                self._run(t, masked.text)
+        except Exception as exc:  # noqa: BLE001 - nenhuma excecao deixa o lead sem resposta
+            self._last_resort(t, exc)
+        if not t.has_terminal:
+            self._last_resort(t, RuntimeError("turno sem mensagem terminal"))
+        self._persist_state(conv)
+        return TurnResult(trace_id, tuple(t.out), conv.status, self._clock.now() - arrived)
+
+    def redeliver(self, trace_id: str | None = None) -> int:
+        """Tenta de novo as entregas de handoff que falharam (`SinkUnavailable`). Devolve quantas foram entregues agora."""
+        done = 0
+        for conv in ([self._convs[trace_id]] if trace_id else list(self._convs.values())):
+            still = []
+            for sink, pkg in conv.undelivered:
+                try:
+                    sink.deliver(pkg)
+                    done += 1
+                except (SinkUnavailable, SinkRejected):
+                    still.append((sink, pkg))
+            conv.undelivered = still
+        return done
+
+    def reconstruct(self, trace_id: str) -> dict[str, Any]:
+        return self._store.reconstruct(trace_id)
+
+    # --- o turno --------------------------------------------------------------------------------------------------------------------------------
+    def _run(self, t: _Turn, text: str) -> None:
+        conv = t.conv
+        if conv.status == "handoff":
+            self._say(t, "closed", templates.AFTER_HANDOFF, meta={"reply_source": "template_state"})
+            return
+        if conv.status == "refused":
+            self._say(t, "closed", templates.CLOSED_REFUSED, meta={"reply_source": "template_state"})
+            return
+
+        gres = self._ask_llm(t, text)
+        if gres is None:                                 # o turno ja terminou (resposta por template ou handoff)
+            return
+        out = gres.output
+        assert out is not None
+        ledger = conv.ledger
+        asked_slot, asked_kind = conv.asked or (None, None)
+        offer, conv.pending_offer = conv.pending_offer, None
+
+        # a resposta a uma confirmacao e resolvida SEM o modelo; ele so continua dono da intencao e dos outros slots
+        skip: set[str] = set()
+        if asked_kind == "confirm" and asked_slot and (st := ledger.state(asked_slot)) is not None and not st.quotable:
+            ledger.answer(asked_slot, text)
+            skip.add(asked_slot)
+            if ledger.attempts(asked_slot) >= 2:         # duas confirmacoes sem resposta util: um humano resolve
+                self._fail(t, DATA_ISSUE_REASON, None, detail=f"confirmacao_sem_resposta:{asked_slot}")
+                return
+        reading = read_text(text, asked_slot)
+        # o modelo repetir um dado que o lead nao falou agora nao pode REBAIXAR um slot ja verificado; so uma correcao escrita pelo lead substitui
+        kept = tuple(s for s in out.slots if s.slot not in skip and not (ledger.state(s.slot) is not None and ledger.state(s.slot).quotable
+                                                                         and not _mentions(reading, s.slot)))
+        ledger.ingest(replace(out, slots=kept), text, asked_slot=asked_slot if asked_kind == "ask" else None)
+
+        nq = self._next(conv)
+        intent = out.intent
+        if offer and nq is None and intent not in templates.HANDOFF_BY_INTENT and intent != "price_objection":   # resposta a oferta de plano alternativo
+            if is_affirmative(text):
+                self._quote(t, plano_id=offer, alternative=True)
+                return
+            if is_negative(text):
+                self._reply_action(t, templates.price_handoff(self._next_step), gres)
+                return
+
+        if intent == "out_of_scope":
+            body = templates.OFF_TOPIC
+            reply = templates.Reply(f"{body} {nq.text}" if nq else body, "template_risk", body, nq.text if nq else None)
+        elif intent == "price_objection" and conv.last_quote is None:
+            body = templates.NO_QUOTE_YET
+            reply = templates.Reply(f"{body} {nq.text}" if nq else body, "template_risk", body, nq.text if nq else None)
+        else:
+            reply = templates.select_reply(gres, self._facts, lead_text=text, next_question=nq.text if nq else None, objection_count=conv.objections,
+                                           has_alternative=self._alternative(conv) is not None, handoff_next_step=self._next_step)
+        if reply.action == "handoff":
+            self._reply_action(t, reply, gres)
+            return
+        if reply.action == "offer_alternative":
+            conv.objections += 1
+            conv.pending_offer = self._alternative(conv)
+            self._say(t, "text", reply.text, meta=self._meta(t, reply, gres, nq))
+            conv.asked = ("oferta", "offer")
+            return
+
+        if nq is None:                                   # tudo verificado: cotar, se ainda nao ha cotacao dos mesmos dados
+            built = ledger.quote_request(self._planos, today=self._today())
+            if isinstance(built, NotQuotable):
+                self._fail(t, DATA_ISSUE_REASON, None, detail="entrada_invalida:" + ",".join(f"{i.slot}:{i.code}" for i in built.issues))
+                return
+            if built.to_payload() != conv.quoted_payload:
+                lead_in = reply.body + "\n\n" if intent in COVERAGE_INTENTS and reply.source == "template_risk" and reply.body else ""
+                self._quote(t, request=built, lead_in=lead_in)
+                return
+        self._converse(t, reply, nq, gres)
+
+    # --- LLM ------------------------------------------------------------------------------------------------------------------------------------
+    def _ask_llm(self, t: _Turn, text: str) -> GuardedResult | None:
+        """Chama o LLM com prazo. Devolve a resposta utilizavel, ou None depois de ja ter encerrado o turno (template ou handoff)."""
+        conv = t.conv
+        history, lead_texts = self._history(t.trace)
+        verified = dict(conv.ledger.verified())
+        message = build_user_message(today=self._today(), known_slots=verified, asked_slot=conv.asked[0] if conv.asked and conv.asked[1] != "offer" else None,
+                                     history=history, message=text)
+        outcome = self._call_with_retry(t, message, [*lead_texts, text])
+        if isinstance(outcome, tuple):                   # falha dura: (componente, detalhe)
+            component, detail = outcome
+            self._fail(t, HandoffReason.SAFETY_GUARD, component, detail=detail,
+                       lead_in=templates.SAFETY if component is FailedComponent.MASKER else templates.LLM_DOWN)
+            return None
+        t.llm = self._llm_meta(outcome)
+        if outcome.kind == "ok":
+            conv.streak = 0
+            return outcome.gres
+        conv.streak += 1                                 # filtrado pelo provedor ou saida inutil: nao extrai nada, o ledger nao e tocado
+        if conv.streak >= 2:
+            self._fail(t, HandoffReason.SAFETY_GUARD, FailedComponent.LLM, detail=outcome.error or "sem_saida")
+            return None
+        nq = self._next(conv)
+        conv.asked = (nq.slot, nq.kind) if nq else None
+        self._say(t, "fallback", nq.text if nq else (templates.AFTER_QUOTE if conv.last_quote else templates.NOT_UNDERSTOOD),
+                  meta={**t.llm, "reply_source": "template_fallback", "violations": ["sem_saida"], "llm_error": outcome.error})
+        return None
+
+    def _call_with_retry(self, t: _Turn, message: str, lead_texts: list[str]) -> _LLMOutcome | tuple[FailedComponent, str]:
+        error: str | None = None
+        gres: GuardedResult | None = None
+        for attempt in (1, 2):
+            remaining = self._ceiling - (self._clock.now() - t.arrived) - RESERVE_S
+            if attempt == 2 and remaining < budgets.LLM_CALL_TIMEOUT_S:
+                break                                    # sem prazo para uma segunda tentativa
+            try:
+                gres = self._call_llm(message, lead_texts, max(0.0, remaining))
+            except UnsafePayload:
+                return FailedComponent.MASKER, "gate_de_pii"
+            except QuotaExhausted:
+                return FailedComponent.LLM, "cota_diaria"
+            except ProtocolError as exc:
+                return FailedComponent.LLM, f"protocolo:{exc.status}"
+            except ServiceUnstable:
+                return FailedComponent.LLM, "servico_instavel"
+            error = gres.result.error
+            klass = outcome_class(error)
+            if error is None and gres.output is not None:
+                return _LLMOutcome("ok", gres, None, attempt)
+            if klass == "answered":                      # o provedor respondeu mal (saida fora do schema, truncada): repetir nao melhora
+                return _LLMOutcome("unusable", gres, error, attempt)
+            # "blocked" (filtro do provedor) e "service" (timeout, 5xx...): uma nova tentativa
+        kind = "blocked" if outcome_class(error) == "blocked" else "service"
+        if kind == "service":
+            return FailedComponent.LLM, error or "servico"
+        return _LLMOutcome(kind, gres, error, attempt)
+
+    def _call_llm(self, message: str, lead_texts: list[str], timeout_s: float) -> GuardedResult:
+        """O LLM numa thread com prazo: o teto do turno vale mesmo que o provedor demore ou o limitador de taxa durma."""
+        box: dict[str, Any] = {}
+        done = threading.Event()
+
+        def run() -> None:
+            try:
+                box["r"] = self._llm.turn(message, lead_texts=lead_texts)
+            except BaseException as exc:  # noqa: BLE001 - repassada a quem chamou
+                box["e"] = exc
+            finally:
+                done.set()
+
+        threading.Thread(target=run, daemon=True).start()
+        if not done.wait(timeout_s):
+            return GuardedResult(LLMResult(None, "timeout", timeout_s, None, None), ())
+        if "e" in box:
+            raise box["e"]
+        return box["r"]
+
+    @staticmethod
+    def _llm_meta(o: _LLMOutcome) -> dict[str, Any]:
+        res = o.gres.result if o.gres else None
+        meta: dict[str, Any] = {"attempt": o.attempt}
+        if res is not None:
+            meta["llm_latency_s"] = round(res.latency_s, 3)
+            if res.usage:
+                meta["usage"] = {"input_tokens": res.usage.input_tokens, "output_tokens": res.usage.output_tokens}
+            if res.error:
+                meta["llm_error"] = res.error
+        return meta
+
+    # --- cotacao --------------------------------------------------------------------------------------------------------------------------------
+    def _quote(self, t: _Turn, *, request: QuoteRequest | None = None, plano_id: str | None = None, alternative: bool = False, lead_in: str = "") -> None:
+        conv = t.conv
+        if request is None:
+            built = conv.ledger.quote_request(self._planos, today=self._today(), plano_id=plano_id)
+            if isinstance(built, NotQuotable):
+                self._fail(t, DATA_ISSUE_REASON, None, detail="entrada_invalida")
+                return
+            request = built
+        elapsed = self._clock.now() - t.arrived
+        budget = max(0.0, min(budgets.QUOTE_BUDGET_S, self._ceiling - elapsed - budgets.OVERHEAD_S))
+        qid = self._ids.new("qte")
+
+        def on_hold() -> None:                           # best-effort: se falhar, o cliente registra e a cotacao segue
+            self._say(t, "hold", templates.HOLD_TEXT, terminal=False, meta={"quote_phase": True})
+
+        outcome = self._gate.quote(conv.ledger, today=self._today(), plano_id=plano_id, budget_s=budget,
+                                   hold_after_s=max(0.0, self._hold_after - elapsed), on_hold=on_hold)
+        if isinstance(outcome, NotQuotable):
+            self._fail(t, DATA_ISSUE_REASON, None, detail="entrada_invalida")
+            return
+        status = {Quote: "ok", Refused: "refused", InvalidInput: "invalid", Unavailable: "unavailable"}[type(outcome)]
+        response: Any = (outcome.raw if isinstance(outcome, Quote) else {"motivo": outcome.motivo} if isinstance(outcome, Refused)
+                         else {"kind": outcome.kind, "detail": outcome.detail} if isinstance(outcome, InvalidInput)
+                         else {"reason": outcome.reason, "last_error": outcome.last_error})
+        self._store.add_quote(t.trace, qid, kind="alternative" if alternative else "quote", status=status, request=request.to_payload(), response=response,
+                              plano_id=request.plano_id, premio_mensal=outcome.premio_mensal if isinstance(outcome, Quote) else None,
+                              elapsed_s=round(outcome.elapsed_s, 3), now=utc_now())
+        for a in outcome.attempts:
+            self._store.add_attempt(t.trace, qid, self._ids.new("att"), n=a.n, started_s=round(a.started_s, 3), latency_s=round(a.latency_s, 3),
+                                    http_status=a.http_status, error_kind=a.error_kind, decision=a.decision)
+        conv.last_ref = QuoteRef(qid, request.plano_id, status, outcome.premio_mensal if isinstance(outcome, Quote) else None)  # type: ignore[arg-type]
+        meta = {**t.llm, "reply_source": "template_quote", "quote_id": qid, "hold_fired": outcome.hold_fired, "quote_elapsed_s": round(outcome.elapsed_s, 3)}
+
+        if isinstance(outcome, Quote):
+            text = lead_in + templates.render_quote(outcome, dict(conv.ledger.verified()), alternative=alternative)
+            self._assert_prices(text, outcome)
+            conv.last_quote, conv.status = outcome, "quoted"
+            if not alternative:
+                conv.quoted_payload, conv.objections = request.to_payload(), 0
+            conv.asked = None
+            self._say(t, "quote", text, quote_id=qid, meta=meta)
+        elif isinstance(outcome, Refused):
+            if alternative:                              # o plano mais barato foi recusado para o mesmo perfil: quem resolve e um humano
+                self._reply_action(t, templates.price_handoff(self._next_step), None)
+                return
+            kind = classify_motive(outcome.motivo)
+            if kind is RefusalKind.UNKNOWN_PLAN:         # o plano que NOS pedimos nao existe: erro do agente, nunca "perfil recusado"
+                self._fail(t, DATA_ISSUE_REASON, FailedComponent.QUOTE_CLIENT, detail="plano_recusado_pela_api")
+                return
+            conv.status, conv.asked = "refused", None
+            self._store.update_conversation(t.trace, utc_now(), status="refused")
+            self._say(t, "refusal", templates.refusal_text(kind, dict(conv.ledger.verified()), self._limits), quote_id=qid,
+                      meta={**meta, "reply_source": "template_refusal", "refusal_kind": kind.value})
+        elif isinstance(outcome, InvalidInput):          # o servico recusou a entrada que o agente montou: erro nosso, nunca do lead
+            self._fail(t, DATA_ISSUE_REASON, FailedComponent.QUOTE_CLIENT, detail=f"entrada_recusada:{outcome.kind}")
+        else:
+            self._fail(t, HandoffReason.QUOTE_UNAVAILABLE, FailedComponent.QUOTE_API, detail=f"{outcome.reason}:{outcome.last_error}")
+
+    @staticmethod
+    def _assert_prices(text: str, q: Quote) -> None:
+        allowed = {brl(q.premio_mensal), brl(q.franquia)} | ({brl(q.primeiro_pagamento)} if q.primeiro_pagamento is not None else set())
+        stray = [m for m in money_in(text) if m not in allowed]
+        if stray:
+            raise PriceInvariantError(f"{len(stray)} valor(es) em reais que a API nao devolveu")
+
+    def _alternative(self, conv: _Conv) -> str | None:
+        """O plano logo abaixo do cotado (um plano REAL, cotado de novo na API). None se o cotado ja e o mais barato ou nao ha cotacao."""
+        if conv.last_quote is None:
+            return None
+        tiers = [p["id"] for p in sorted(self._planos["planos"], key=lambda p: len(p["coberturas"]))]
+        i = tiers.index(conv.last_quote.plano_id) if conv.last_quote.plano_id in tiers else 0
+        return tiers[i - 1] if i > 0 else None
+
+    # --- conversa e handoff ---------------------------------------------------------------------------------------------------------------------
+    def _next(self, conv: _Conv) -> _Next | None:
+        for slot in ORDER:
+            st = conv.ledger.state(slot)
+            if st is not None and st.quotable:
+                continue
+            if st is not None and st.needs_confirmation:
+                return _Next(slot, "confirm", conv.ledger.question(slot, self._facts))
+            return _Next(slot, "ask", questions.ask(slot, self._facts))
+        return None
+
+    def _converse(self, t: _Turn, reply: templates.Reply, nq: _Next | None, gres: GuardedResult) -> None:
+        conv = t.conv
+        source, kind, text = reply.source, "text", reply.text
+        if source == "llm":
+            asked_ok = nq is not None and nq.kind == "ask" and nq.slot != "necessidade" and _asks(nq.slot, text)
+            clean = not self._masker.mask(text).kinds and not residual_pii(text)       # o que o modelo escreve tambem passa pelo mascarador
+            if nq is None:
+                text, source = templates.AFTER_QUOTE, "template_state"
+            elif not (asked_ok and clean):               # confirmacao e pergunta de necessidade sao do produto, nao do modelo (D6)
+                text, source = nq.text, "template_question"
+                kind = "confirmation" if nq.kind == "confirm" else "question"
+        elif source == "template_fallback":
+            if nq is None:
+                text = templates.AFTER_QUOTE
+            kind = "fallback" if nq is None else ("confirmation" if nq.kind == "confirm" else "question")
+        conv.asked = (nq.slot, nq.kind) if nq else None
+        self._say(t, kind, text, meta=self._meta(t, reply, gres, nq, source=source))
+
+    def _reply_action(self, t: _Turn, reply: templates.Reply, gres: GuardedResult | None) -> None:
+        self._handoff(t, reply.handoff_reason or HandoffReason.OUT_OF_SCOPE, reply.text,
+                      meta={**t.llm, "reply_source": reply.source, "intent": gres.output.intent if gres and gres.output else None})
+
+    def _fail(self, t: _Turn, reason: HandoffReason, component: FailedComponent | None, *, detail: str, lead_in: str | None = None) -> None:
+        text = templates.failure_handoff_text(reason, self._next_step) if lead_in is None else f"{lead_in} {templates.handoff_text(self._next_step)}"
+        self._handoff(t, reason, text, component=component, detail=detail, meta={**t.llm, "reply_source": "template_failure"})
+
+    def _handoff(self, t: _Turn, reason: HandoffReason, text: str, *, component: FailedComponent | None = None, detail: str = "",
+                 meta: Mapping[str, Any] | None = None) -> None:
+        conv = t.conv
+        conv.status, conv.asked = "handoff", None
+        self._store.update_conversation(t.trace, utc_now(), status="handoff", handoff_reason=reason.value,
+                                        failed_component=component.value if component else None, handoff_detail=detail or None,
+                                        slots=conv.ledger.snapshot(), llm_blocked_streak=conv.streak)
+        package = self._package(conv, reason, component, text)
+        self._deliver(conv, self._record_sink, package)          # 1) o registro no SQLite  2) a resposta ao lead  3) os outros destinos
+        self._say(t, "handoff", text, meta={**(meta or {}), "handoff_reason": reason.value})
+        for sink in self._sinks:
+            self._deliver(conv, sink, package)
+
+    @staticmethod
+    def _deliver(conv: _Conv, sink: HandoffSink, package: HandoffPackage) -> None:
+        try:
+            sink.deliver(package)
+        except (SinkUnavailable, SinkRejected):          # o handoff fica pendente; o que o lead leu continua verdadeiro (o registro local existe)
+            conv.undelivered.append((sink, package))
+
+    def _package(self, conv: _Conv, reason: HandoffReason, component: FailedComponent | None, told: str) -> HandoffPackage:
+        v = dict(conv.ledger.verified())
+        plano = plano_for(v["necessidade"], self._planos) if "necessidade" in v else None
+        qualification = {"idade": int(v["idade"]) if "idade" in v else None, "veiculo_ano": int(v["veiculo_ano"]) if "veiculo_ano" in v else None,
+                         "cep": v.get("cep"), "plano_id": plano or (conv.last_ref.plano_id if conv.last_ref else None), "data_inicio": v.get("data_inicio")}
+        recent = [m for m in self._store.messages(conv.trace_id) if m["kind"] != "hold"][-MAX_RECENT_MESSAGES:]
+        return HandoffPackage(
+            trace_id=conv.trace_id, reason=reason, created_at=utc_now(), qualification=qualification,
+            missing=tuple(s for s in ORDER if s not in v), last_quote=conv.last_ref,
+            recent_messages=tuple(MaskedMessage(m["role"], m["text"], datetime.fromisoformat(m["ts"])) for m in recent),
+            told_to_lead=told, failed_component=component)
+
+    def _last_resort(self, t: _Turn, exc: BaseException) -> None:
+        """Excecao inesperada: o lead recebe uma resposta honesta e a conversa vai a um humano. So o NOME da excecao e registrado (nunca a mensagem)."""
+        detail = type(exc).__name__
+        if t.has_terminal:                               # a mensagem terminal ja saiu; so registra
+            try:
+                self._store.update_conversation(t.trace, utc_now(), handoff_detail=f"erro_apos_resposta:{detail}")
+            except Exception:  # noqa: BLE001
+                pass
+            return
+        try:
+            self._fail(t, HandoffReason.SAFETY_GUARD, FailedComponent.ORCHESTRATOR, detail=detail)
+        except Exception:  # noqa: BLE001 - nem o banco responde: o lead ainda assim le algo
+            text = f"{templates.SAFETY} {templates.handoff_text(self._next_step)}"
+            out = Out("handoff", text, self._ids.new("msg"))
+            t.out.append(out)
+            if t.send:
+                try:
+                    t.send(out)
+                except Exception:  # noqa: BLE001
+                    pass
+
+    # --- registro -------------------------------------------------------------------------------------------------------------------------------
+    def _say(self, t: _Turn, kind: str, text: str, *, quote_id: str | None = None, meta: Mapping[str, Any] | None = None, terminal: bool = True) -> Out:
+        mid = self._ids.new("msg")
+        self._store.add_message(t.trace, mid, role="agent", kind=kind, text=text, ts=utc_now(), status="sent", quote_id=quote_id, meta=meta)
+        out = Out(kind, text, mid, terminal)
+        t.out.append(out)
+        if t.send:
+            try:
+                t.send(out)
+            except Exception:  # noqa: BLE001 - o canal falhar nao desfaz o que ja foi registrado
+                pass
+        return out
+
+    @staticmethod
+    def _meta(t: _Turn, reply: templates.Reply, gres: GuardedResult, nq: _Next | None, *, source: str | None = None) -> dict[str, Any]:
+        out = gres.output
+        violations = list(reply.violations) or sorted({v.rule for v in gres.violations})
+        return {**t.llm, "reply_source": source or reply.source, "intent": out.intent if out else None, "facts_used": list(reply.facts_used),
+                "violations": violations, **({"asked": [nq.slot, nq.kind]} if nq else {})}
+
+    def _persist_state(self, conv: _Conv) -> None:
+        try:
+            self._store.update_conversation(conv.trace_id, utc_now(), slots=conv.ledger.snapshot(), llm_blocked_streak=conv.streak, status=conv.status)
+        except Exception:  # noqa: BLE001 - o snapshot e auditoria, nao pode derrubar o turno
+            pass
+
+    def _history(self, trace_id: str) -> tuple[list[tuple[str, str]], list[str]]:
+        """(historico para o prompt, textos do lead). Tudo ja mascarado; sem cotacao, recusa nem handoff (nada de preco volta ao modelo)."""
+        msgs = [m for m in self._store.messages(trace_id) if m["role"] == "lead" or m["kind"] in HISTORY_KINDS]
+        msgs = msgs[:-1][-HISTORY_WINDOW:]               # a ultima e a mensagem de AGORA, que vai separada
+        return ([("lead" if m["role"] == "lead" else "assistente", m["text"]) for m in msgs], [m["text"] for m in msgs if m["role"] == "lead"])
+
+    def _replay(self, trace_id: str, lead_seq: int) -> tuple[Out, ...]:
+        out = []
+        for m in self._store.messages(trace_id):
+            if m["seq"] <= lead_seq:
+                continue
+            if m["role"] == "lead":
+                break
+            out.append(Out(m["kind"], m["text"], m["id"], m["kind"] != "hold"))
+        return tuple(out)
+
+
+def _asks(slot: str, text: str) -> bool:
+    """O reply do modelo faz UMA pergunta sobre o dado que o estado pede? Senao, quem pergunta e o produto."""
+    return "?" in text and bool(_TOPIC[slot].search(strip_accents(text).lower()))
+
+
+def _mentions(reading: Any, slot: str) -> bool:
+    """A mensagem de agora traz algo sobre este slot? Um slot ja verificado so e substituido se o lead escreveu um valor novo para ele."""
+    if slot in ("veiculo_ano", "cep"):
+        return bool(reading.candidates(slot))
+    if slot == "idade":
+        return bool(reading.candidates(slot)) or bool(reading.birth_years)
+    if slot == "necessidade":
+        return implied_tier(reading.plain) is not None
+    return bool(reading.dates) or bool(reading.relative_date)

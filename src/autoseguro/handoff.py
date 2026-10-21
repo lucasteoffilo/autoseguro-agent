@@ -59,6 +59,7 @@ class FailedComponent(StrEnum):
     MASKER = "masker"
     STORE = "store"
     SINK = "sink"
+    ORCHESTRATOR = "orchestrator"   # excecao inesperada no proprio orquestrador: o lead nunca fica sem resposta
 
 
 # Estes motivos descrevem uma FALHA, entao exigem dizer qual componente falhou. Os demais sao decisoes (pedido do lead etc).

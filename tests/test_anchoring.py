@@ -460,8 +460,11 @@ def test_only_the_ledger_builds_a_quote_request():
 
 
 def test_only_the_gate_calls_the_quote_client():
-    callers = {p.name for p in src_files() if re.search(r"\.quote\(", p.read_text(encoding="utf-8"))}
-    assert callers == {"anchoring.py"}, f"chamadores de .quote(): {callers}"
+    """O CLIENTE da /quote so e chamado por `QuoteGate` (anchoring.py). Quem precisa de cotacao, o orquestrador, chama o gate e nunca o cliente."""
+    texts = {p.name: p.read_text(encoding="utf-8") for p in src_files()}
+    assert {n for n, t in texts.items() if re.search(r"client\.quote\(", t)} == {"anchoring.py"}
+    calls = {n: re.findall(r"[\w.]*\.quote\(", t) for n, t in texts.items() if n != "anchoring.py" and ".quote(" in t}
+    assert calls == {"orchestrator.py": ["self._gate.quote("]}, f"outras chamadas de .quote(): {calls}"
 
 
 def test_the_prompt_asks_for_the_model_year_and_no_longer_encodes_a_birth_year_as_an_age():
