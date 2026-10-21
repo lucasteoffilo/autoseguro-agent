@@ -35,6 +35,8 @@ from .llm.guarded import GuardedLLM, GuardedResult, UnsafePayload
 from .llm.prompt import build_user_message
 from .llm.throttle import ProtocolError, QuotaExhausted, ServiceUnstable
 from .masker import Masker, residual_pii
+from .media import media_kind
+from .precheck import Rules, precheck
 from .quote_client import InvalidInput, Quote, QuoteClient, RealClock, Refused, Unavailable
 from .refusals import Limits, RefusalKind, classify_motive
 from .slots import QuoteRequest
@@ -47,6 +49,9 @@ HISTORY_KINDS = ("text", "question", "confirmation", "fallback")        # o que 
 RESERVE_S = 1.0                                                          # folga para o turno terminar com a mensagem terminal
 COVERAGE_INTENTS = ("ask_coverage_question", "question_not_in_facts")    # respondidos por template; se a cotacao sai no mesmo turno, vao antes dela
 DATA_ISSUE_REASON = HandoffReason.DATA_AMBIGUOUS
+MEDIA_LIMIT = 2         # pedidos de texto seguidos, sem nenhum dado novo no meio: a 2a midia vai ao humano (MEDIA_UNREADABLE)
+STALL_LIMIT = 3         # a mesma pergunta sem resposta util 3 vezes seguidas: CONVERSATION_STALLED
+OFF_TOPIC_LIMIT = 2     # 2 mensagens fora de cotacao seguidas, sem dado novo: OUT_OF_SCOPE
 # O que a pergunta do LLM precisa citar para valer como a pergunta que o ESTADO pede (quem decide o proximo passo e o orquestrador, nao o modelo).
 _TOPIC = {"veiculo_ano": re.compile(r"\bano\b"), "idade": re.compile(r"\bidade\b|\banos\b"), "cep": re.compile(r"\bcep\b"),
           "data_inicio": re.compile(r"\b(dia|data|comec\w*|inicio|vigencia)\b")}
@@ -97,6 +102,11 @@ class _Conv:
     last_ref: QuoteRef | None = None
     quoted_payload: dict[str, Any] | None = None   # a ultima cotacao PRINCIPAL exibida (para nao recotar sem mudanca)
     streak: int = 0                           # turnos seguidos sem saida utilizavel do LLM (filtro do provedor, saida invalida)
+    probed: tuple[str, str] | None = None     # (idade, ano) para os quais a pre-checagem ja rodou: so roda de novo se o lead mudar um deles
+    spoke: bool = False                       # o agente ja disse alguma coisa (a 1a mensagem leva a apresentacao)
+    media_asks: int = 0                       # midias sem transcricao desde o ultimo dado novo
+    stall: int = 0                            # turnos seguidos em que a mesma pergunta ficou sem resposta util
+    off_topic: int = 0                        # mensagens fora de cotacao desde o ultimo dado novo
     undelivered: list[tuple[HandoffSink, HandoffPackage]] = field(default_factory=list)
 
 
@@ -107,6 +117,7 @@ class _Turn:
     send: Callable[[Out], None] | None
     out: list[Out] = field(default_factory=list)
     llm: dict[str, Any] = field(default_factory=dict)    # meta do LLM neste turno, vai na mensagem terminal
+    extra: dict[str, Any] = field(default_factory=dict)  # o que o turno decidiu e vale em TODAS as mensagens dele (ex.: o veredito da pre-checagem)
 
     @property
     def trace(self) -> str:
@@ -134,6 +145,7 @@ class Orchestrator:
         self._facts = fact_base or FactBase.from_planos(planos)
         self._masker = masker or Masker()
         self._gate = QuoteGate(quote_client, planos)
+        self._rules = Rules.from_planos(planos)           # as faixas da pre-checagem tambem saem do /planos
         self._limits = Limits.from_planos(planos)       # os numeros que o texto de recusa cita saem do /planos, nao do codigo
         self._record_sink = SqliteSink(store)           # o registro de rastreabilidade: sempre existe, e e o primeiro a receber o pacote
         self._sinks = tuple(sinks)                      # CRM, fila... ALEM do SQLite, nunca no lugar
@@ -162,7 +174,8 @@ class Orchestrator:
         text = ""                                       # daqui para a frente so existe a versao mascarada
         leftover = residual_pii(masked.text)            # o gate de envio conferindo o mascarador
         shown = masked.text if not leftover else "[mensagem não registrada: dado sensível não mascarado]"
-        meta = {"mask_kinds": list(masked.kinds), **({"truncated": True} if truncated else {}), **({"residual_pii": leftover} if leftover else {})}
+        meta = {"mask_kinds": list(masked.kinds), **({"truncated": True} if truncated else {}), **({"residual_pii": leftover} if leftover else {}),
+                **({"media": mk} if (mk := media_kind(masked.text)) else {})}
         self._store.add_message(trace_id, self._ids.new("msg"), role="lead", kind="text", text=shown, ts=utc_now(), status="processed",
                                 external_id=external_id, meta=meta)
 
@@ -208,6 +221,10 @@ class Orchestrator:
             self._say(t, "closed", templates.CLOSED_REFUSED, meta={"reply_source": "template_state"})
             return
 
+        if (media := media_kind(text)) is not None:      # midia sem transcricao: nao e lida, o LLM nao e chamado
+            self._media(t, media)
+            return
+
         gres = self._ask_llm(t, text)
         if gres is None:                                 # o turno ja terminou (resposta por template ou handoff)
             return
@@ -216,6 +233,7 @@ class Orchestrator:
         ledger = conv.ledger
         asked_slot, asked_kind = conv.asked or (None, None)
         offer, conv.pending_offer = conv.pending_offer, None
+        before = ledger.snapshot()
 
         # a resposta a uma confirmacao e resolvida SEM o modelo; ele so continua dono da intencao e dos outros slots
         skip: set[str] = set()
@@ -231,6 +249,9 @@ class Orchestrator:
                                                                          and not _mentions(reading, s.slot)))
         ledger.ingest(replace(out, slots=kept), text, asked_slot=asked_slot if asked_kind == "ask" else None)
 
+        progress = ledger.snapshot() != before            # algum dado novo ou corrigido neste turno
+        if progress:
+            conv.stall = conv.media_asks = conv.off_topic = 0
         nq = self._next(conv)
         intent = out.intent
         if offer and nq is None and intent not in templates.HANDOFF_BY_INTENT and intent != "price_objection":   # resposta a oferta de plano alternativo
@@ -242,6 +263,11 @@ class Orchestrator:
                 return
 
         if intent == "out_of_scope":
+            conv.off_topic += 1
+            if conv.off_topic >= OFF_TOPIC_LIMIT:        # a 1a vez redireciona; insistir em assunto que nao e cotacao e com um humano
+                self._handoff(t, HandoffReason.OUT_OF_SCOPE, templates.failure_handoff_text(HandoffReason.OUT_OF_SCOPE, self._next_step),
+                              meta={**t.llm, "reply_source": "template_state", "intent": intent})
+                return
             body = templates.OFF_TOPIC
             reply = templates.Reply(f"{body} {nq.text}" if nq else body, "template_risk", body, nq.text if nq else None)
         elif intent == "price_objection" and conv.last_quote is None:
@@ -260,6 +286,16 @@ class Orchestrator:
             conv.asked = ("oferta", "offer")
             return
 
+        if self._eligibility(t, intent, reply):          # idade e ano verificados: a recusa prevista e confirmada pela API antes de ser dita
+            return
+        if (nq is not None and not progress and intent not in templates.RISK_INTENTS and intent != "out_of_scope"
+                and (nq.slot, nq.kind) == (asked_slot, asked_kind)):
+            conv.stall += 1                              # a mesma pergunta voltou a ficar sem resposta util
+            if conv.stall >= STALL_LIMIT:
+                self._handoff(t, HandoffReason.CONVERSATION_STALLED, templates.failure_handoff_text(HandoffReason.CONVERSATION_STALLED, self._next_step),
+                              meta={**t.llm, "reply_source": "template_state", "intent": intent}, detail=f"pergunta_repetida:{nq.slot}")
+                return
+
         if nq is None:                                   # tudo verificado: cotar, se ainda nao ha cotacao dos mesmos dados
             built = ledger.quote_request(self._planos, today=self._today())
             if isinstance(built, NotQuotable):
@@ -270,6 +306,57 @@ class Orchestrator:
                 self._quote(t, request=built, lead_in=lead_in)
                 return
         self._converse(t, reply, nq, gres)
+
+    # --- midia ----------------------------------------------------------------------------------------------------------------------------------
+    def _media(self, t: _Turn, kind: str) -> None:
+        """Midia sem transcricao: pede o dado em texto; a segunda seguida, sem dado novo no meio, vai a um humano. Nao chama o LLM nem le a descricao."""
+        conv = t.conv
+        conv.media_asks += 1
+        if conv.media_asks >= MEDIA_LIMIT:
+            self._handoff(t, HandoffReason.MEDIA_UNREADABLE, templates.failure_handoff_text(HandoffReason.MEDIA_UNREADABLE, self._next_step),
+                          detail=f"midia_repetida:{kind}", meta={"reply_source": "template_state", "media": kind})
+            return
+        nq = self._next(conv)
+        text = templates.media_request(kind, nq.text if nq else None)
+        if not conv.spoke:
+            text = f"{templates.GREETING} {text}"
+        conv.asked = (nq.slot, nq.kind) if nq else None
+        self._say(t, "question" if nq else "text", text, meta={"reply_source": "template_media", "media": kind, **({"asked": [nq.slot, nq.kind]} if nq else {})})
+
+    # --- pre-checagem ---------------------------------------------------------------------------------------------------------------------------
+    def _eligibility(self, t: _Turn, intent: str, reply: templates.Reply) -> bool:
+        """Idade e ano verificados: a pre-checagem le as faixas do /planos. Se PREVE recusa, a API confirma (so idade e ano, plano mais barato) antes de o lead ouvir
+        'recusado'. A API aceitou: a divergencia e registrada, o preco parcial nunca e exibido e a conversa segue. A API fora: humano, com o veredito no pacote.
+        True = o turno terminou."""
+        conv = t.conv
+        v = conv.ledger.verified()
+        if "idade" not in v or "veiculo_ano" not in v or conv.probed == (v["idade"], v["veiculo_ano"]):
+            return False
+        conv.probed = (v["idade"], v["veiculo_ano"])
+        built = self._gate.eligibility_request(conv.ledger, today=self._today())
+        if isinstance(built, NotQuotable):               # ano-modelo futuro, idade impossivel: um humano decide, sem perguntar CEP, cobertura e data antes
+            self._fail(t, DATA_ISSUE_REASON, None, detail="entrada_invalida:" + ",".join(f"{i.slot}:{i.code}" for i in built.issues))
+            return True
+        verdict = precheck(self._rules, idade=built.idade, veiculo_ano=built.veiculo_ano, today=self._today())
+        t.extra["precheck"] = verdict.label
+        if verdict.accepts:
+            return False
+        done = self._call_api(t, built, "precheck", lambda **kw: self._gate.probe(conv.ledger, today=self._today(), **kw))
+        if done is None:
+            return True
+        outcome, qid = done
+        meta = {**t.llm, "reply_source": "template_refusal", "quote_id": qid, "precheck_kind": verdict.kind.value if verdict.kind else None}
+        if isinstance(outcome, Refused):
+            lead_in = reply.body + "\n\n" if intent in COVERAGE_INTENTS and reply.source == "template_risk" and reply.body else ""
+            self._refuse(t, outcome, qid, meta, lead_in)
+        elif isinstance(outcome, Quote):                 # a pre-checagem previu recusa e a API aceitou: divergencia registrada, nada do preco parcial vai ao lead
+            t.extra["precheck_divergence"] = True
+            return False
+        elif isinstance(outcome, InvalidInput):
+            self._fail(t, DATA_ISSUE_REASON, FailedComponent.QUOTE_CLIENT, detail=f"entrada_recusada:{outcome.kind}")
+        else:
+            self._fail(t, HandoffReason.QUOTE_UNAVAILABLE, FailedComponent.QUOTE_API, detail=f"precheck:{outcome.reason}:{outcome.last_error}")
+        return True
 
     # --- LLM ------------------------------------------------------------------------------------------------------------------------------------
     def _ask_llm(self, t: _Turn, text: str) -> GuardedResult | None:
@@ -361,6 +448,35 @@ class Orchestrator:
         return meta
 
     # --- cotacao --------------------------------------------------------------------------------------------------------------------------------
+    def _call_api(self, t: _Turn, request: QuoteRequest, kind: str, call: Callable[..., Any]) -> tuple[Any, str] | None:
+        """UMA chamada a /quote (cotacao, alternativa ou confirmacao da pre-checagem), com o orcamento do que sobrou do turno, e o registro de tudo no banco.
+        Devolve (resultado, id da cotacao), ou None se o gate recusou chamar (e o turno ja terminou em handoff)."""
+        conv = t.conv
+        elapsed = self._clock.now() - t.arrived
+        budget = max(0.0, min(budgets.QUOTE_BUDGET_S, self._ceiling - elapsed - budgets.OVERHEAD_S))
+        qid = self._ids.new("qte")
+
+        def on_hold() -> None:                           # best-effort: se falhar, o cliente registra e a chamada segue
+            self._say(t, "hold", templates.HOLD_TEXT, terminal=False, meta={"quote_phase": True})
+
+        outcome = call(budget_s=budget, hold_after_s=max(0.0, self._hold_after - elapsed), on_hold=on_hold)
+        if isinstance(outcome, NotQuotable):
+            self._fail(t, DATA_ISSUE_REASON, None, detail="entrada_invalida")
+            return None
+        status = {Quote: "ok", Refused: "refused", InvalidInput: "invalid", Unavailable: "unavailable"}[type(outcome)]
+        response: Any = (outcome.raw if isinstance(outcome, Quote) else {"motivo": outcome.motivo} if isinstance(outcome, Refused)
+                         else {"kind": outcome.kind, "detail": outcome.detail} if isinstance(outcome, InvalidInput)
+                         else {"reason": outcome.reason, "last_error": outcome.last_error})
+        self._store.add_quote(t.trace, qid, kind=kind, status=status, request=request.to_payload(), response=response,
+                              plano_id=request.plano_id, premio_mensal=outcome.premio_mensal if isinstance(outcome, Quote) else None,
+                              elapsed_s=round(outcome.elapsed_s, 3), now=utc_now())
+        for a in outcome.attempts:
+            self._store.add_attempt(t.trace, qid, self._ids.new("att"), n=a.n, started_s=round(a.started_s, 3), latency_s=round(a.latency_s, 3),
+                                    http_status=a.http_status, error_kind=a.error_kind, decision=a.decision)
+        if kind != "precheck" or not isinstance(outcome, Quote):   # o preco parcial da confirmacao nao entra nem na referencia que o humano recebe
+            conv.last_ref = QuoteRef(qid, request.plano_id, status, outcome.premio_mensal if isinstance(outcome, Quote) else None)  # type: ignore[arg-type]
+        return outcome, qid
+
     def _quote(self, t: _Turn, *, request: QuoteRequest | None = None, plano_id: str | None = None, alternative: bool = False, lead_in: str = "") -> None:
         conv = t.conv
         if request is None:
@@ -369,29 +485,11 @@ class Orchestrator:
                 self._fail(t, DATA_ISSUE_REASON, None, detail="entrada_invalida")
                 return
             request = built
-        elapsed = self._clock.now() - t.arrived
-        budget = max(0.0, min(budgets.QUOTE_BUDGET_S, self._ceiling - elapsed - budgets.OVERHEAD_S))
-        qid = self._ids.new("qte")
-
-        def on_hold() -> None:                           # best-effort: se falhar, o cliente registra e a cotacao segue
-            self._say(t, "hold", templates.HOLD_TEXT, terminal=False, meta={"quote_phase": True})
-
-        outcome = self._gate.quote(conv.ledger, today=self._today(), plano_id=plano_id, budget_s=budget,
-                                   hold_after_s=max(0.0, self._hold_after - elapsed), on_hold=on_hold)
-        if isinstance(outcome, NotQuotable):
-            self._fail(t, DATA_ISSUE_REASON, None, detail="entrada_invalida")
+        done = self._call_api(t, request, "alternative" if alternative else "quote",
+                              lambda **kw: self._gate.quote(conv.ledger, today=self._today(), plano_id=plano_id, **kw))
+        if done is None:
             return
-        status = {Quote: "ok", Refused: "refused", InvalidInput: "invalid", Unavailable: "unavailable"}[type(outcome)]
-        response: Any = (outcome.raw if isinstance(outcome, Quote) else {"motivo": outcome.motivo} if isinstance(outcome, Refused)
-                         else {"kind": outcome.kind, "detail": outcome.detail} if isinstance(outcome, InvalidInput)
-                         else {"reason": outcome.reason, "last_error": outcome.last_error})
-        self._store.add_quote(t.trace, qid, kind="alternative" if alternative else "quote", status=status, request=request.to_payload(), response=response,
-                              plano_id=request.plano_id, premio_mensal=outcome.premio_mensal if isinstance(outcome, Quote) else None,
-                              elapsed_s=round(outcome.elapsed_s, 3), now=utc_now())
-        for a in outcome.attempts:
-            self._store.add_attempt(t.trace, qid, self._ids.new("att"), n=a.n, started_s=round(a.started_s, 3), latency_s=round(a.latency_s, 3),
-                                    http_status=a.http_status, error_kind=a.error_kind, decision=a.decision)
-        conv.last_ref = QuoteRef(qid, request.plano_id, status, outcome.premio_mensal if isinstance(outcome, Quote) else None)  # type: ignore[arg-type]
+        outcome, qid = done
         meta = {**t.llm, "reply_source": "template_quote", "quote_id": qid, "hold_fired": outcome.hold_fired, "quote_elapsed_s": round(outcome.elapsed_s, 3)}
 
         if isinstance(outcome, Quote):
@@ -406,18 +504,23 @@ class Orchestrator:
             if alternative:                              # o plano mais barato foi recusado para o mesmo perfil: quem resolve e um humano
                 self._reply_action(t, templates.price_handoff(self._next_step), None)
                 return
-            kind = classify_motive(outcome.motivo)
-            if kind is RefusalKind.UNKNOWN_PLAN:         # o plano que NOS pedimos nao existe: erro do agente, nunca "perfil recusado"
-                self._fail(t, DATA_ISSUE_REASON, FailedComponent.QUOTE_CLIENT, detail="plano_recusado_pela_api")
-                return
-            conv.status, conv.asked = "refused", None
-            self._store.update_conversation(t.trace, utc_now(), status="refused")
-            self._say(t, "refusal", templates.refusal_text(kind, dict(conv.ledger.verified()), self._limits), quote_id=qid,
-                      meta={**meta, "reply_source": "template_refusal", "refusal_kind": kind.value})
+            self._refuse(t, outcome, qid, meta)
         elif isinstance(outcome, InvalidInput):          # o servico recusou a entrada que o agente montou: erro nosso, nunca do lead
             self._fail(t, DATA_ISSUE_REASON, FailedComponent.QUOTE_CLIENT, detail=f"entrada_recusada:{outcome.kind}")
         else:
             self._fail(t, HandoffReason.QUOTE_UNAVAILABLE, FailedComponent.QUOTE_API, detail=f"{outcome.reason}:{outcome.last_error}")
+
+    def _refuse(self, t: _Turn, outcome: Refused, qid: str, meta: Mapping[str, Any], lead_in: str = "") -> None:
+        """A API recusou (a palavra final). O lead le o template do CODIGO do motivo, nunca o texto cru dela."""
+        conv = t.conv
+        kind = classify_motive(outcome.motivo)
+        if kind is RefusalKind.UNKNOWN_PLAN:             # o plano que NOS pedimos nao existe: erro do agente, nunca "perfil recusado"
+            self._fail(t, DATA_ISSUE_REASON, FailedComponent.QUOTE_CLIENT, detail="plano_recusado_pela_api")
+            return
+        conv.status, conv.asked = "refused", None
+        self._store.update_conversation(t.trace, utc_now(), status="refused")
+        self._say(t, "refusal", lead_in + templates.refusal_text(kind, dict(conv.ledger.verified()), self._limits), quote_id=qid,
+                  meta={**meta, "reply_source": "template_refusal", "refusal_kind": kind.value})
 
     @staticmethod
     def _assert_prices(text: str, q: Quote) -> None:
@@ -497,11 +600,13 @@ class Orchestrator:
         qualification = {"idade": int(v["idade"]) if "idade" in v else None, "veiculo_ano": int(v["veiculo_ano"]) if "veiculo_ano" in v else None,
                          "cep": v.get("cep"), "plano_id": plano or (conv.last_ref.plano_id if conv.last_ref else None), "data_inicio": v.get("data_inicio")}
         recent = [m for m in self._store.messages(conv.trace_id) if m["kind"] != "hold"][-MAX_RECENT_MESSAGES:]
+        verdict = (precheck(self._rules, idade=int(v["idade"]), veiculo_ano=int(v["veiculo_ano"]), today=self._today()).label
+                   if v.get("idade", "").isdigit() and v.get("veiculo_ano", "").isdigit() else None)
         return HandoffPackage(
             trace_id=conv.trace_id, reason=reason, created_at=utc_now(), qualification=qualification,
             missing=tuple(s for s in ORDER if s not in v), last_quote=conv.last_ref,
             recent_messages=tuple(MaskedMessage(m["role"], m["text"], datetime.fromisoformat(m["ts"])) for m in recent),
-            told_to_lead=told, failed_component=component)
+            told_to_lead=told, failed_component=component, precheck=verdict)
 
     def _last_resort(self, t: _Turn, exc: BaseException) -> None:
         """Excecao inesperada: o lead recebe uma resposta honesta e a conversa vai a um humano. So o NOME da excecao e registrado (nunca a mensagem)."""
@@ -527,7 +632,9 @@ class Orchestrator:
     # --- registro -------------------------------------------------------------------------------------------------------------------------------
     def _say(self, t: _Turn, kind: str, text: str, *, quote_id: str | None = None, meta: Mapping[str, Any] | None = None, terminal: bool = True) -> Out:
         mid = self._ids.new("msg")
-        self._store.add_message(t.trace, mid, role="agent", kind=kind, text=text, ts=utc_now(), status="sent", quote_id=quote_id, meta=meta)
+        self._store.add_message(t.trace, mid, role="agent", kind=kind, text=text, ts=utc_now(), status="sent", quote_id=quote_id, meta={**t.extra, **(meta or {})})
+        if terminal:
+            t.conv.spoke = True
         out = Out(kind, text, mid, terminal)
         t.out.append(out)
         if t.send:

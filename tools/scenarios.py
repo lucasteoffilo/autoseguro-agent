@@ -38,8 +38,6 @@ SCENARIOS = [
     ("2-recusa", API, None, [
         "oi, quero um seguro pro meu fusca",
         "é um fusca 1998, tenho 45 anos e moro no cep 01310-100",
-        "só roubo e colisão",
-        "começando dia 01/11/2026",
         "e se eu escolher outro plano?"]),
     ("3-quote-fora-do-ar", API, DEAD_QUOTE_API, [
         "oi",

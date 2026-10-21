@@ -34,6 +34,8 @@ _INTENT_RULES = (
     ("complaint", re.compile(r"\b(reclamacao|reclamar|absurdo|pessimo|horrivel|vergonha)\b")),
     ("ready_to_close", re.compile(r"\b(fechar|contratar|vamos fechar|pode emitir|quero esse|fechado)\b")),
     ("price_objection", re.compile(r"\b(caro|cara|mais barato|desconto|muito alto|muito salgado)\b")),
+    ("out_of_scope", re.compile(r"\b(seguro (de )?(vida|casa|residencial|viagem|celular|saude|empresarial)|plano de saude|emprestimo|financiamento|"
+                               r"previsao do tempo|receita de)\b")),
 )
 _COVERAGE_WORDS = re.compile(r"\b(cobre|cobrem|cobertura|coberturas|carencia|franquia|plano|planos|vidro|vidros|terceiros|assistencia|reserva|proporcional|"
                              r"roub\w*|furt\w*|colis\w*)\b")

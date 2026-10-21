@@ -279,8 +279,9 @@ def test_the_model_repeating_a_verified_slot_does_not_downgrade_it():
 
 # --- recusa ---------------------------------------------------------------------------------------------------------------------------------------
 def test_the_apis_refusal_is_recorded_as_a_refusal_not_as_a_handoff():
+    """Idade e ano vem na mesma mensagem: a pre-checagem antecipa a recusa e a API a confirma (kind='precheck') antes de o lead ouvir 'recusado'."""
     h = Harness(refused("Idade acima do limite de aceitacao (75 anos)."))
-    last = h.run(GREET, "é um onix 2019, tenho 80 anos e moro no cep 30130-010", NEED_BASIC, START)
+    last = h.run(GREET, "é um onix 2019, tenho 80 anos e moro no cep 30130-010")
     text = last.terminal[0].text
     assert last.terminal[0].kind == "refusal" and "a seguradora só aceita motoristas de até 75 anos" in text and "aceitacao" not in text
     assert "Dados usados: modelo 2019 e 80 anos." in text and "30130" not in text
@@ -288,8 +289,17 @@ def test_the_apis_refusal_is_recorded_as_a_refusal_not_as_a_handoff():
     assert last.status == "refused" and h.conv["status"] == "refused"
     assert h.conv["handoff_reason"] is None and h.conv["handoff_package"] is None and h.conv["failed_component"] is None
     q = h.store.quotes(h.trace)
-    assert [(x["status"], x["premio_mensal"]) for x in q] == [("refused", None)] and json.loads(q[0]["response"]) == {"motivo": "Idade acima do limite de aceitacao (75 anos)."}
+    assert [(x["kind"], x["status"], x["premio_mensal"]) for x in q] == [("precheck", "refused", None)]
+    assert json.loads(q[0]["response"]) == {"motivo": "Idade acima do limite de aceitacao (75 anos)."}
     assert q[0]["attempts"][0]["decision"] == "stop_refused" and h.store.money_not_in_quotes(h.trace) == []
+    assert h.transport.payloads == [{"plano_id": "essencial", "idade": 80, "veiculo_ano": 2019}], "so idade e ano, no plano mais barato: a recusa nao depende do resto"
+
+
+def test_when_the_precheck_does_not_see_a_refusal_the_apis_refusal_at_the_end_is_still_the_final_word():
+    h = Harness(refused("Regra nova do servico: perfil bloqueado."))
+    last = h.run(*HAPPY)
+    assert last.terminal[0].kind == "refusal" and last.status == "refused" and h.transport.calls == 1
+    assert [(x["kind"], x["status"]) for x in h.store.quotes(h.trace)] == [("quote", "refused")]
 
 
 def test_the_lead_never_reads_a_motive_the_service_invented():

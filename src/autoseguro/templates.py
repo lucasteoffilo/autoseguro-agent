@@ -65,6 +65,16 @@ CLOSED_REFUSED = "Esta conversa foi encerrada porque não consigo cotar este per
 NO_QUOTE_YET = "Ainda não montei a sua cotação. Me passa os dados que eu calculo e você já vê o valor."
 OFF_TOPIC = "Isso foge do que eu consigo ajudar: eu só faço cotação de seguro de carro."
 AFTER_QUOTE = "Se algum dado estiver errado, ou se quiser comparar outro plano, é só me dizer."
+GREETING = "Olá! Sou a assistente virtual da AutoSeguro."
+MEDIA_UNREADABLE = "Continuo sem conseguir abrir o que você enviou: por aqui eu só leio mensagens de texto."
+STALLED = "Parece que não estou conseguindo avançar com as suas respostas por aqui."
+_MEDIA_WHAT = {"audio": "o seu áudio", "image": "a sua imagem", "document": "o seu documento", "video": "o seu vídeo"}
+
+
+def media_request(kind: str, question: str | None = None) -> str:
+    """Pede o dado em texto. `question` e a proxima pergunta do produto; sem ela (nada a perguntar), pede o que o lead precisa."""
+    return (f"Por aqui eu só leio mensagens de texto, então não consegui abrir {_MEDIA_WHAT.get(kind, 'o que você enviou')}. "
+            f"{question or 'Pode escrever em texto o que você precisa?'}")
 
 
 def _labels(items) -> str:
@@ -120,7 +130,8 @@ def render_refusal(motivo: str, verified: Mapping[str, str] | None = None, limit
 
 def failure_handoff_text(reason: HandoffReason, next_step: str = "") -> str:
     """O texto do handoff de FALHA (o orquestrador decide o motivo; o texto e sempre template, honesto e sem promessa)."""
-    lead_in = {HandoffReason.QUOTE_UNAVAILABLE: UNAVAILABLE, HandoffReason.SAFETY_GUARD: SAFETY, HandoffReason.DATA_AMBIGUOUS: DATA_UNCONFIRMED}.get(reason, "")
+    lead_in = {HandoffReason.QUOTE_UNAVAILABLE: UNAVAILABLE, HandoffReason.SAFETY_GUARD: SAFETY, HandoffReason.DATA_AMBIGUOUS: DATA_UNCONFIRMED,
+               HandoffReason.MEDIA_UNREADABLE: MEDIA_UNREADABLE, HandoffReason.CONVERSATION_STALLED: STALLED, HandoffReason.OUT_OF_SCOPE: OFF_TOPIC}.get(reason, "")
     return f"{lead_in} {handoff_text(next_step)}".strip()
 
 

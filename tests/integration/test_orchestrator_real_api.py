@@ -44,13 +44,19 @@ def test_the_price_the_lead_reads_is_the_one_the_api_returns_for_each_plan(need,
     assert store.money_not_in_quotes(trace) == []
 
 
-@pytest.mark.parametrize("line,motivo", [("é um fusca 1998, tenho 45 anos e moro no cep 01310-100", "Veiculo com mais de 20 anos"),
-                                         ("é um onix 2019, tenho 80 anos e moro no cep 01310-100", "Idade acima do limite")])
-def test_a_real_refusal_is_recorded_as_a_refusal_and_closes_the_conversation(line, motivo):
-    orc, store, trace, results = conversation(["oi", line, "só roubo e colisão", "começando dia 01/12/2099"])
-    assert results[-1].terminal[0].kind == "refusal" and motivo in results[-1].terminal[0].text and results[-1].status == "refused"
+@pytest.mark.parametrize("line,motivo,texto", [
+    ("é um fusca 1998, tenho 45 anos e moro no cep 01310-100", "Veiculo com mais de 20 anos", "a seguradora não aceita veículos com mais de 20 anos"),
+    ("é um onix 2019, tenho 80 anos e moro no cep 01310-100", "Idade acima do limite", "a seguradora só aceita motoristas de até 75 anos")])
+def test_a_real_refusal_is_anticipated_confirmed_by_the_api_and_closes_the_conversation(line, motivo, texto):
+    """Idade e ano estao na 2a mensagem: a pre-checagem prevê, a API REAL confirma (so idade e ano) e o lead le o template. CEP, cobertura e data nao sao perguntados."""
+    orc, store, trace, results = conversation(["oi", line, "só roubo e colisão"])
+    assert results[1].terminal[0].kind == "refusal" and texto in results[1].terminal[0].text and results[1].status == "refused"
+    assert motivo not in results[1].terminal[0].text, "o lead nao le o texto cru da API"
+    assert results[2].terminal[0].kind == "closed"
     c = store.conversation(trace)
-    assert c["status"] == "refused" and c["handoff_reason"] is None and store.quotes(trace)[0]["status"] == "refused"
+    q = store.quotes(trace)
+    assert c["status"] == "refused" and c["handoff_reason"] is None and [(x["kind"], x["status"]) for x in q] == [("precheck", "refused")]
+    assert motivo in json.loads(q[0]["response"])["motivo"], "o motivo cru da API fica no banco"
 
 
 def test_the_four_scenarios_end_the_way_the_plan_says(tmp_path):
