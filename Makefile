@@ -7,7 +7,7 @@ BIN    := $(VENV)/bin
 DATASET_PATH ?= ../namastex-fde-challenge/dataset/conversations.parquet
 export DATASET_PATH
 
-.PHONY: help setup test test-integration api-up api-down api-test-up api-test-down analysis-dataset analysis-latency analysis-e2e analysis-cost llm-ping smoke-llm smoke-llm-anthropic smoke-llm-dry
+.PHONY: help setup test test-integration api-up api-down api-test-up api-test-down chat demo verify-clean analysis-dataset analysis-latency analysis-e2e analysis-cost llm-ping smoke-llm smoke-llm-anthropic smoke-llm-dry
 
 help: ## lista os alvos
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | sed -E 's/:.*## /\t/'
@@ -34,6 +34,15 @@ api-test-up: ## API deterministica para testes (porta 8100, falha e lentidao zer
 
 api-test-down:
 	docker compose -f docker-compose.test.yml down
+
+chat: ## conversa no terminal (MockLLM, offline). ARGS="--api http://localhost:8100" aponta a API de teste; ARGS="--llm real" usa o modelo do .env (gasta a cota do provedor)
+	$(BIN)/python -m autoseguro $(ARGS)
+
+demo: api-test-up ## os quatro cenarios (cotacao, recusa, /quote fora do ar, pedido de humano) com o MockLLM e a API de teste; grava var/scenarios/
+	$(BIN)/python tools/scenarios.py
+
+verify-clean: ## prova num container python:3.12 LIMPO: git archive + pip install do pyproject + testes. REV=HEAD|--worktree  EXTRAS=dev,llm|dev (dev = so o nucleo, sem o SDK da Anthropic)
+	tools/verify_clean.sh $(or $(REV),HEAD) $(or $(EXTRAS),dev,llm)
 
 llm-ping: ## preflight de 1 requisicao real: autenticacao, pedido aceito (json_schema + require_parameters), saida valida e latencia da amostra. Rode antes do smoke-llm
 	$(BIN)/python tools/llm_ping.py $(ARGS)

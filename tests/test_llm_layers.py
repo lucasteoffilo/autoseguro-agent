@@ -18,7 +18,7 @@ from autoseguro.llm.guarded import GuardedLLM, GuardedResult, UnsafePayload
 from autoseguro.llm.throttle import QuotaLog, RateLimiter, ThrottledLLM
 from tests.fake_servers import CANARY_KEY, GOOD, FakeServer, anthropic_json, chat_json
 
-anthropic = pytest.importorskip("anthropic")
+anthropic = pytest.importorskip("anthropic", reason="SDK opcional da Anthropic ausente (pip install -e '.[llm]'): o nucleo roda sem ele")
 
 ROOT = Path(__file__).resolve().parent.parent
 BASE = FactBase.from_planos(json.loads((ROOT / "vendor" / "quote-service" / "data" / "plans.json").read_text(encoding="utf-8")))

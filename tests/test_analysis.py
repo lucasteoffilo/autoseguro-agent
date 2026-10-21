@@ -183,7 +183,7 @@ def test_degraded_scenario_hedging_adds_load_without_helping(sim):
 
 # --- dataset ----------------------------------------------------------------------------------------------------------------------
 def test_dataset_profile_output_is_aggregate_only(dataset_bodies, tmp_path):
-    pytest.importorskip("pandas")
+    pytest.importorskip("pandas", reason="extra opcional ausente (pip install -e '.[analysis]')")
     from analysis import dataset_profile
 
     out = tmp_path / "profile.json"

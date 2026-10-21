@@ -10,7 +10,7 @@ from pathlib import Path
 
 import pytest
 
-anthropic = pytest.importorskip("anthropic")
+anthropic = pytest.importorskip("anthropic", reason="SDK opcional da Anthropic ausente (pip install -e '.[llm]'): o nucleo roda sem ele")
 
 from autoseguro.facts import FactBase  # noqa: E402
 from autoseguro.llm.claude import ClaudeLLM  # noqa: E402
