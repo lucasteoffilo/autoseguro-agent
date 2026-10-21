@@ -742,3 +742,59 @@ def test_only_the_gate_calls_the_quote_client_and_the_orchestrator_never_builds_
     assert ".quote(" in src and src.count("self._gate.quote(") == 1
     for forbidden in ("QuoteClient.quote", "_client.quote", "build_quote_request", "QuoteRequest("):
         assert forbidden not in src, forbidden
+
+
+# --- "um instante": carencia de 1 s contada do INICIO da cotacao --------------------------------------------------------------------------------------
+def _slow_llm_harness(quote_s):
+    clock = VirtualClock()
+    llm = SlowMock(BASE, clock)
+    h = Harness(ess(quote_s), llm=llm, clock=clock)
+    return h, llm
+
+
+def _last_turn(h, sent_at):
+    for line in HAPPY[:-1]:
+        h.say(line)
+    t0 = h.clock.now()
+    r = h.say(START, send=lambda o: sent_at.append((o.kind, round(h.clock.now() - t0, 3))))
+    return r
+
+
+def test_a_slow_llm_does_not_make_the_hold_fire_at_once_when_the_quote_is_fast():
+    """Rodada de 2026-10-21: o LLM real gastava 2,5 a 3 s e o 'um instante' saia de imediato, 5 a 258 ms antes de uma cotacao que respondia em milissegundos."""
+    h, llm = _slow_llm_harness(0.3)
+    llm.delay = 3.0
+    sent = []
+    r = _last_turn(h, sent)
+    assert [m.kind for m in r.messages] == ["quote"] and not any(m["kind"] == "hold" for m in h.agent)
+    assert r.elapsed_s > 3.0 and [k for k, _ in sent] == ["quote"]
+
+
+def test_the_hold_fires_one_second_after_the_quote_started_not_after_the_turn_started():
+    h, llm = _slow_llm_harness(4.0)
+    llm.delay = 3.0
+    sent = []
+    r = _last_turn(h, sent)
+    assert [k for k, _ in sent] == ["hold", "quote"]
+    assert sent[0][1] == pytest.approx(3.0 + 1.0, abs=0.05), "3 s de LLM + 1 s de carencia"
+    assert sent[1][1] == pytest.approx(3.0 + 4.0, abs=0.05) and [m.kind for m in r.messages] == ["hold", "quote"]
+
+
+def test_with_a_fast_llm_and_a_slow_quote_the_hold_comes_one_second_into_the_quote_earlier_than_the_old_2_5_seconds():
+    h, llm = _slow_llm_harness(8.0)
+    sent = []
+    _last_turn(h, sent)
+    assert sent[0][0] == "hold" and sent[0][1] == pytest.approx(1.0, abs=0.05)
+
+
+@pytest.mark.parametrize("quote_s,hold", [(0.2, False), (0.9, False), (1.5, True), (8.0, True)])
+def test_the_hold_exists_only_when_the_quote_is_still_pending_after_the_grace(quote_s, hold):
+    h, llm = _slow_llm_harness(quote_s)
+    sent = []
+    _last_turn(h, sent)
+    assert (sent[0][0] == "hold") is hold
+
+
+def test_the_grace_is_one_second_and_the_old_constant_stays_for_the_simulations():
+    from autoseguro import budgets as b
+    assert b.HOLD_GRACE_S == 1.0 and b.HOLD_AFTER_S == 2.5

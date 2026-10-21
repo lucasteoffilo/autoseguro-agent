@@ -143,7 +143,7 @@ class Orchestrator:
     def __init__(self, *, llm: GuardedLLM, store: Store, quote_client: QuoteClient, planos: Mapping[str, Any], fact_base: FactBase | None = None,
                  masker: Masker | None = None, sinks: Sequence[HandoffSink] = (), ids: Any = None, clock: Any = None,
                  today: Callable[[], date] = date.today, handoff_next_step: str = "", mode: str = "mock",
-                 turn_ceiling_s: float = budgets.TURN_CEILING_S, hold_after_s: float = budgets.HOLD_AFTER_S) -> None:
+                 turn_ceiling_s: float = budgets.TURN_CEILING_S, hold_after_s: float = budgets.HOLD_GRACE_S) -> None:
         self._llm, self._store, self._planos = llm, store, planos
         self._facts = fact_base or FactBase.from_planos(planos)
         self._masker = masker or Masker()
@@ -512,7 +512,7 @@ class Orchestrator:
         def on_hold() -> None:                           # best-effort: se falhar, o cliente registra e a chamada segue
             self._say(t, "hold", templates.HOLD_TEXT, terminal=False, meta={"quote_phase": True})
 
-        outcome = call(budget_s=budget, hold_after_s=max(0.0, self._hold_after - elapsed), on_hold=on_hold)
+        outcome = call(budget_s=budget, hold_after_s=self._hold_after, on_hold=on_hold)   # a carencia conta do INICIO da cotacao, nao do turno
         if isinstance(outcome, NotQuotable):
             self._fail(t, DATA_ISSUE_REASON, None, detail="entrada_invalida")
             return None

@@ -12,7 +12,8 @@ TURN_P95_NO_QUOTE_S = 5.0
 TURN_P95_WITH_QUOTE_S = 12.0
 
 # --- mecanismos --------------------------------------------------------------------------------------
-HOLD_AFTER_S = 2.5          # "um instante", contado desde a CHEGADA da mensagem: garante silencio <= 3s
+HOLD_GRACE_S = 1.0          # "um instante" so sai se a /quote ainda estiver pendente 1s DEPOIS DE COMECAR (contado do inicio da cotacao, nao do turno)
+HOLD_AFTER_S = 2.5          # a politica ANTERIOR (2,5s desde a chegada da mensagem): fica porque as simulacoes de analysis/ a modelam; o orquestrador usa HOLD_GRACE_S
 TURN_CEILING_S = 20.0       # rede de seguranca: estourou => mensagem honesta + handoff, nunca silencio
 OVERHEAD_S = 0.10           # webhook/terminal + SQLite + mascaramento + render de template
 
