@@ -49,6 +49,14 @@ class LLMClient(Protocol):
     def turn(self, user_message: str) -> LLMResult: ...
 
 
+def outcome_class(error: str | None) -> str:
+    """Quem falhou. "answered": o provedor entregou uma resposta (boa ou ruim: saida fora do schema, truncada ou vazia e falha do MODELO). "blocked": o provedor
+    bloqueou (`content_filter`), que nao e erro de formato do modelo. "service": timeout, conexao, 429, 5xx e erro de protocolo: falha do servico, nao da conversa."""
+    if error is None or error.startswith("invalid_output") or error in ("max_tokens", "no_text", "no_choices"):
+        return "answered"
+    return "blocked" if error == "content_filter" else "service"
+
+
 def result_from_text(text: str, fact_ids: Sequence[str], *, latency_s: float, usage: Usage | None, stop_reason: str | None,
                      request_id: str | None = None, http_status: int | None = None, served_model: str | None = None) -> LLMResult:
     """Validacao LOCAL e unica, igual para todo provedor. Saida que nao casa com o esquema NUNCA vira dado: vira erro, e o orquestrador

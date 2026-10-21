@@ -43,10 +43,11 @@ sys.path.insert(0, str(ROOT / "src"))
 from analysis import cost_model  # noqa: E402
 from analysis.e2e_latency_sim import derive_llm_call_limit, project_turn_p95  # noqa: E402
 from autoseguro import budgets  # noqa: E402
+from autoseguro.anchoring import SlotLedger  # noqa: E402
 from autoseguro.facts import FactBase, strip_accents  # noqa: E402
 from autoseguro.fastpath import fast_extract  # noqa: E402
 from autoseguro.guardrail import Violation, check_reply  # noqa: E402
-from autoseguro.llm.base import LLMResult, Usage  # noqa: E402
+from autoseguro.llm.base import LLMResult, Usage, outcome_class  # noqa: E402,F401  (reexportado)
 from autoseguro.llm.config import ConfigError, LLMConfig  # noqa: E402
 from autoseguro.llm.diagnose import explain_failure  # noqa: E402
 from autoseguro.llm.factory import make_llm  # noqa: E402
@@ -132,13 +133,33 @@ class CallRecord:
     adversarial: bool = False
 
 
-def outcome_class(error: str | None) -> str:
-    """Quem falhou. "answered": o provedor entregou uma resposta (boa ou ruim: saida fora do schema, truncada ou vazia e falha do MODELO e conta
-    contra a saida valida). "blocked": o provedor bloqueou (`content_filter`), o que nao e erro de formato do modelo e e medido a parte.
-    "service": timeout, conexao, 429, 5xx: falha do servico, fora do denominador (o disjuntor cuida delas)."""
-    if error is None or error.startswith("invalid_output") or error in ("max_tokens", "no_text", "no_choices"):
-        return "answered"
-    return "blocked" if error == "content_filter" else "service"
+def _is_wrong(msg: SmokeMessage, slot: str, value: str) -> bool:
+    """Um valor que CHEGARIA a /quote seria errado quando: o slot e ambiguo no gabarito (nao devia virar valor), ou difere do gabarito, ou ninguem o disse."""
+    if slot in msg.expect_ambiguous:
+        return True
+    return norm(slot, value) != norm(slot, msg.expected[slot]) if slot in msg.expected else True
+
+
+def _anchoring_scores(msg: SmokeMessage, out: TurnOutput) -> dict:
+    """Reaplica o SlotLedger a esta extracao, SEM modelo: o que a ancoragem deixaria seguir para a /quote sem confirmacao (o gate de preco) e o que
+    pediria para confirmar (o custo em turnos). Uma mensagem de cada vez, como o smoke as envia."""
+    led = SlotLedger()
+    led.ingest(out, msg.text, asked_slot=msg.asked_slot)
+    emitted = list(dict.fromkeys(e.slot for e in out.slots))
+    wrong, pending, dropped, false_confirm = [], [], [], []
+    for slot in emitted:
+        st = led.state(slot)
+        if st.quotable:
+            if _is_wrong(msg, slot, st.value):
+                wrong.append(slot)
+        elif st.needs_confirmation:
+            pending.append(slot)
+            if slot in msg.expected and slot not in msg.expect_ambiguous:
+                false_confirm.append(slot)  # mensagem limpa que pediria confirmacao: custo de turno sem motivo
+        else:
+            dropped.append(slot)  # extracao ignorada (inventada ou marcador '?'): o dado continua faltando, a pergunta e a ordinaria
+    return {"anchor_slots": len(emitted) - len(dropped), "anchor_wrong": wrong, "anchor_pending": pending, "anchor_dropped": dropped,
+            "anchor_false_confirmation": false_confirm, "anchor_asks": bool(pending)}
 
 
 def score_call(msg: SmokeMessage, res: LLMResult, base: FactBase, violations: tuple[Violation, ...] | None = None, reply: Reply | None = None) -> dict:
@@ -179,6 +200,7 @@ def score_call(msg: SmokeMessage, res: LLMResult, base: FactBase, violations: tu
     risk_message = msg.intents <= RISK_INTENTS
     fast = fast_extract(msg.asked_slot, msg.text, today=SMOKE_TODAY)
     llm_value = out.value(msg.asked_slot) if msg.asked_slot else None
+    s.update(_anchoring_scores(msg, out))
     s.update(slot_outcomes=kinds, silent_wrong=wrong_silent, intent_ok=out.intent in msg.intents,
              guardrail_ok=not violations, violations=sorted({v.rule for v in violations}),
              forbidden_leak=[f for f in msg.forbidden_in_reply if strip_accents(f).lower() in plain],
@@ -226,6 +248,19 @@ def _derived_limit() -> float:
     return derive_llm_call_limit(n=15_000)["binding_llm_call_p95_max_s"]
 
 
+def _anchoring_summary(ok: list[CallRecord], raw_silent: int) -> dict:
+    scored = [r for r in ok if "anchor_slots" in r.score]
+    with_slots = [r for r in scored if r.score["anchor_slots"]]
+    asks = [r for r in with_slots if r.score["anchor_asks"]]
+    return {"messages_with_slots": len(with_slots),
+            "wrong_reach_quote": sum(len(r.score["anchor_wrong"]) for r in scored),      # O GATE DURO: tem que ser 0
+            "confirmations_asked": len(asks),                                             # o CUSTO EM TURNOS (so o que ha a MOSTRAR ao lead)
+            "extractions_ignored": sum(len(r.score.get("anchor_dropped", [])) for r in scored),   # inventadas ou marcadores: sem turno extra
+            "confirmations_per_message": round(len(asks) / len(with_slots), 3) if with_slots else 0.0,
+            "false_confirmations": sum(len(r.score["anchor_false_confirmation"]) for r in scored),
+            "raw_model_silent_wrong": raw_silent}
+
+
 def summarize(records: list[CallRecord], model: str) -> dict:
     rs = [r for r in records if not r.warmup]
     answered = [r for r in rs if outcome_class(r.error) == "answered"]
@@ -261,7 +296,8 @@ def summarize(records: list[CallRecord], model: str) -> dict:
         "provider_blocked": {"benign": sum(not r.adversarial for r in blocked), "adversarial": sum(r.adversarial for r in blocked)},
         "service_failures": len(service),
         "warnings": ([f"{len(service)} chamada(s) sem resposta do servico ficaram FORA do denominador: o resultado e incompleto"] if service else []),
-        "silent_wrong": sum(r.score["silent_wrong"] for r in ok),
+        "silent_wrong": sum(r.score["silent_wrong"] for r in ok),   # o erro silencioso do modelo CRU: reportado, deixou de ser gate (README D7)
+        "anchoring": _anchoring_summary(ok, sum(r.score["silent_wrong"] for r in ok)),
         "omissions": sum(v == "omitted" for r in ok for v in r.score["slot_outcomes"].values()),
         "intent_accuracy": round(sum(r.score["intent_ok"] for r in ok) / len(ok), 3) if ok else 0.0,
         "neutral_replies": len(neutral),
@@ -280,7 +316,7 @@ def summarize(records: list[CallRecord], model: str) -> dict:
         "derived_llm_call_limit_p95_s": _derived_limit(),
     }
     s["checks"] = {
-        "0 extracoes erradas em silencio": s["silent_wrong"] == 0,
+        "0 slots errados chegariam a /quote sem confirmacao (ancoragem)": s["anchoring"]["wrong_reach_quote"] == 0,
         "saida estruturada valida em 100% das chamadas que o provedor entregou": s["valid_output_rate"] == 1.0,
         "0 bloqueios do provedor (content_filter) em mensagens benignas": s["provider_blocked"]["benign"] == 0,
         f"p95 projetado do turno sem cotacao <= {budgets.TURN_P95_NO_QUOTE_S:.0f}s": bool(projection and projection["no_quote_p95_s"] <= budgets.TURN_P95_NO_QUOTE_S),
@@ -313,7 +349,12 @@ def print_report(summaries: list[dict], dry: bool) -> None:
             print(f"  latencia por chamada  p50 {l['p50']}s  p95 {l['p95']}s  p99 {l['p99']}s  max {l['max']}s   (limite derivado do criterio: p95 <= {s['derived_llm_call_limit_p95_s']}s)")
             print(f"  p95 do TURNO projetado  sem cotacao {p['no_quote_p95_s']}s (criterio {budgets.TURN_P95_NO_QUOTE_S:.0f}s)   com cotacao {p['with_quote_p95_s']}s (criterio {budgets.TURN_P95_WITH_QUOTE_S:.0f}s)")
         print(f"  tokens medios  entrada {s['mean_input_tokens']}  saida {s['mean_output_tokens']}  raciocinio {s['mean_reasoning_tokens']}  saida/s {s['output_tokens_per_s']}   US$/chamada {s['usd_per_call']}")
-        print(f"  extracao  erros silenciosos {s['silent_wrong']}   omissoes {s['omissions']}   intent {s['intent_accuracy']}   saida valida {s['valid_output_rate']}")
+        a = s["anchoring"]
+        print(f"  GATE DE PRECO (ancoragem)  slots errados que chegariam a /quote sem confirmacao: {a['wrong_reach_quote']}   "
+              f"confirmacoes pedidas: {a['confirmations_asked']} de {a['messages_with_slots']} mensagens com slot ({a['confirmations_per_message']})   "
+              f"em mensagem limpa: {a['false_confirmations']}")
+        print(f"  erro silencioso do modelo CRU: {s['silent_wrong']} (reportado; nao e gate: a garantia de preco e do sistema, README D7)   "
+              f"omissoes {s['omissions']}   intent {s['intent_accuracy']}   saida valida {s['valid_output_rate']}")
         print(f"  guardrail aprova {s['guardrail_pass_rate']} (de {s['neutral_replies']} replies do LLM)  violacoes {s['guardrail_violations']}   reply {s['reply_words']}")
         print(f"  entregue ao lead {s['delivered']} | intencao de risco reconhecida {s['risk_recognition_rate']} em {s['risk_calls']} chamadas "
               f"| termos proibidos que o LLM teria escrito nas turnos de risco: {s['llm_reply_on_risk_turns_would_leak']}")

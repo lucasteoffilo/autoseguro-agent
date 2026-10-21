@@ -185,11 +185,23 @@ def test_the_warmup_call_is_excluded_from_the_latency_statistics():
     assert s["warmup_latency_s"] == 30.0 and s["latency_s"]["max"] == 1.0 and s["calls"] == 20
 
 
-def test_summary_passes_with_fast_clean_calls_and_fails_on_a_single_silent_error():
+GATE = "0 slots errados chegariam a /quote sem confirmacao (ancoragem)"
+
+
+def test_summary_passes_with_fast_clean_calls_and_fails_on_a_slot_that_would_reach_the_quote_wrong():
     fine = summarize([rec("a", 1.0, GOOD_SCORE) for _ in range(20)], "claude-haiku-5-5")
     assert fine["passes"] and fine["usd_per_call"] > 0
-    broken = summarize([rec("a", 1.0, GOOD_SCORE) for _ in range(19)] + [rec("a", 1.0, {**GOOD_SCORE, "silent_wrong": 1})], "claude-haiku-5-5")
-    assert not broken["passes"] and not broken["checks"]["0 extracoes erradas em silencio"]
+    reaches = {**GOOD_SCORE, "anchor_slots": 1, "anchor_wrong": ["veiculo_ano"], "anchor_pending": [], "anchor_false_confirmation": [], "anchor_asks": False}
+    broken = summarize([rec("a", 1.0, GOOD_SCORE) for _ in range(19)] + [rec("a", 1.0, reaches)], "claude-haiku-5-5")
+    assert not broken["passes"] and not broken["checks"][GATE] and broken["anchoring"]["wrong_reach_quote"] == 1
+
+
+def test_the_raw_model_silent_error_is_reported_but_is_no_longer_the_gate():
+    """README D7: o smoke mede o modelo cru, mas a garantia de preco e do sistema. O erro cru continua no relatorio e nao reprova sozinho."""
+    s = summarize([rec("a", 1.0, GOOD_SCORE) for _ in range(19)] + [rec("a", 1.0, {**GOOD_SCORE, "silent_wrong": 1})], "claude-haiku-5-5")
+    assert s["silent_wrong"] == 1 and s["anchoring"]["raw_model_silent_wrong"] == 1
+    assert s["checks"][GATE] and s["passes"], "o erro cru sozinho nao reprova: o que reprova e o que chegaria a /quote"
+    assert not any("silencio" in name for name in s["checks"]), "o criterio antigo saiu da lista de gates"
 
 
 def test_a_free_model_costs_zero_and_the_report_names_the_model():
