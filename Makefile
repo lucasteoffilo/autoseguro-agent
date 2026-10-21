@@ -7,7 +7,7 @@ BIN    := $(VENV)/bin
 DATASET_PATH ?= ../namastex-fde-challenge/dataset/conversations.parquet
 export DATASET_PATH
 
-.PHONY: help setup test test-integration api-up api-down api-test-up api-test-down chat demo verify-clean analysis-dataset analysis-latency analysis-e2e analysis-cost llm-ping smoke-llm smoke-llm-anthropic smoke-llm-dry
+.PHONY: help setup test test-integration api-up api-down api-test-up api-test-down chat demo evals evals-api export-log verify-clean analysis-dataset analysis-latency analysis-e2e analysis-cost llm-ping smoke-llm smoke-llm-anthropic smoke-llm-dry
 
 help: ## lista os alvos
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | sed -E 's/:.*## /\t/'
@@ -40,6 +40,15 @@ chat: ## conversa no terminal (MockLLM, offline). ARGS="--api http://localhost:8
 
 demo: api-test-up ## os quatro cenarios (cotacao, recusa, /quote fora do ar, pedido de humano) com o MockLLM e a API de teste; grava var/scenarios/
 	$(BIN)/python tools/scenarios.py
+
+evals: ## os evals: sinteticos de handoff (sempre) + conversas derivadas do dataset (se DATASET_PATH existir), contra o servico vendorizado em processo. Grava evals/results/. Sai com 1 se um criterio quebrar
+	$(BIN)/python tools/evals.py $(ARGS)
+
+evals-api: api-test-up ## os mesmos evals, com a /quote e o oraculo na API HTTP de teste (porta 8100)
+	$(BIN)/python tools/evals.py --api http://localhost:8100 $(ARGS)
+
+export-log: ## exporta o log de UMA execucao em Markdown (transcricao, tentativas da /quote, decisoes), mascarado e varrido. DB=var/autoseguro.db TRACE=trc_... OUT=var/log.md
+	$(BIN)/python tools/export_log.py --db $(or $(DB),var/autoseguro.db) --trace $(TRACE) --out $(or $(OUT),var/log.md)
 
 verify-clean: ## prova num container python:3.12 LIMPO: git archive + pip install do pyproject + testes. REV=HEAD|--worktree  EXTRAS=dev,llm|dev (dev = so o nucleo, sem o SDK da Anthropic)
 	tools/verify_clean.sh $(or $(REV),HEAD) $(or $(EXTRAS),dev,llm)

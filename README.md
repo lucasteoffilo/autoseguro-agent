@@ -3,9 +3,9 @@
 Agente de vendas de seguro auto para o desafio técnico FDE / AI Engineer da Namastex: conversa com o lead,
 qualifica, cota um plano pela API de cotação e decide entre resolver sozinho e passar para um humano.
 
-> **Estado: Etapas 0, 1, 2a e 2b escritas; o roteiro vai até a Etapa 8 (entrega).** O agente **conversa no terminal** (`make chat`), com o `MockLLM` ou com o modelo real pelo mesmo caminho, e grava tudo no SQLite. Existem o cliente da `/quote`, a ancoragem de slots (D5), os templates (D6), o mascarador de PII, o orquestrador e os quatro cenários (`make demo`, D8).
+> **Estado: Etapas 0, 1, 2a, 2b e 3 escritas; o roteiro vai até a Etapa 8 (entrega).** O agente **conversa no terminal** (`make chat`), com o `MockLLM` ou com o modelo real pelo mesmo caminho, e grava tudo no SQLite. Existem o cliente da `/quote`, a ancoragem de slots (D5), os templates (D6), o mascarador de PII, o orquestrador e os quatro cenários (`make demo`, D8), a pré-checagem de elegibilidade com confirmação pela API, os 12 motivos de handoff com um cenário cada, os evals (`make evals`, D9) e a exportação do log de uma execução (`make export-log`).
 > O `smoke-llm` rodou duas vezes com o modelo real e o gate mudou de lugar (D7). **A conversa inteira com o modelo real ainda não rodou**: o que está provado é o encanamento com o mock; a qualidade da conversa com o LLM real é a Etapa 7, feita pelo autor.
-> Falta: pré-checagem de elegibilidade e os demais motivos de handoff (Etapa 3), o endurecimento do LLM (4), o webhook (5, bônus), a execução com o LLM real e o log (7) e a entrega (8).
+> Falta: o endurecimento do LLM (Etapa 4), o webhook (5, bônus), a execução com o LLM real e o log (7) e a entrega (8).
 > Esta página cresce a cada etapa. O que está marcado _(planejado)_ descreve o que vem, não o que já roda.
 > Roteiro e critérios de corte em [`docs/PLAN.md`](docs/PLAN.md); achados que motivam o desenho em [`docs/FINDINGS.md`](docs/FINDINGS.md).
 
@@ -32,6 +32,8 @@ make api-test-up && make chat ARGS="--api http://localhost:8100"
 ```
 
 `make demo` roda os quatro cenários (cotação, recusa, `/quote` fora do ar, pedido de humano) e grava a transcrição e os registros do SQLite em `var/scenarios/`. `make chat ARGS="--llm real"` usa o modelo do `.env` e **gasta a cota diária do provedor** (a mesma contada pelo smoke).
+
+**Evals e log:** `make evals` roda os cenários sintéticos de handoff e as conversas derivadas do dataset (se `DATASET_PATH` existir) contra o serviço vendorizado em processo, grava [`evals/results/`](evals/results/report.md) e **sai com 1 se um critério quebrar**; `make evals-api` faz o mesmo contra a API HTTP de teste. `make export-log TRACE=trc_…` exporta o log de **uma** execução (transcrição, decisões, tentativas da `/quote`, tudo mascarado e varrido) em Markdown. `make verify-clean` prova o repo num container 3.12 limpo.
 
 `make smoke-llm-dry` roda o `smoke-llm` com um LLM de mentira (sem chave, sem rede).
 Com o modelo de verdade pelo OpenRouter: copie `.env.example` para `.env` e preencha `LLM_API_KEY` (ou `OPENROUTER_API_KEY`). **Primeiro `make llm-ping`**: uma única requisição real que confere a autenticação, se o OpenRouter aceita o pedido como montado (`json_schema` + `require_parameters`), se o modelo devolve saída válida e a latência dessa amostra; confirma que a chave está setada sem mostrar valor, prefixo nem tamanho.
@@ -202,16 +204,39 @@ O relatório passa a trazer três números: **(1)** slots errados que chegariam 
 - **A PII de teste é gerada na hora.** CPF, telefone, e-mail, placa, caminho de home e chaves usados nos testes nascem em [`tests/synthetic_pii.py`](tests/synthetic_pii.py) (CPF com dígitos verificadores calculados ali, a partir de um hash fixo); nenhum literal existe em arquivo do repo, e o teste de higiene **não tem mais allowlist**: ele também reprova qualquer sequência de 11 dígitos com verificadores válidos, que é o que um scanner externo apontaria.
 - **Limites, ditos sem rodeio:** o **mock prova o encanamento, não a qualidade da conversa** (ele extrai com o mesmo leitor determinístico da ancoragem, então concorda com ela por construção); o estado vivo da conversa fica na memória do processo (o SQLite guarda o registro); o mascarador é um piso (não reconhece nome solto nem endereço); entrada inválida depois de verificada vai a `DATA_AMBIGUOUS` em vez de reperguntar (Etapa 3). A lista completa está em [`docs/PLAN.md`](docs/PLAN.md), seção 14.
 
+### D9. Pré-checagem, mídia, conversa que não avança e os evals: a API continua sendo a palavra final
+
+**Pré-checagem** ([`precheck.py`](src/autoseguro/precheck.py)). O cenário 2 da 2b mostrava o custo de não ter: o lead respondia CEP, cobertura e data antes de ouvir que o carro não é aceito. Agora, no turno em que **idade e ano estão verificados**, a pré-checagem lê as faixas do `/planos` (nunca do código) e espelha o serviço: idade primeiro, depois o carro, a primeira faixa que casa decide, "nenhuma faixa casou" também é recusa.
+- **Ela nunca diz "recusado".** Se prevê recusa, o agente faz **uma** chamada de confirmação à `/quote` (só idade e ano, o plano mais barato, sem CEP nem data; `kind='precheck'` em `quotes`). **Quem fala é a API:** o lead lê o template do código do motivo *que a API devolveu*, mesmo que a previsão fosse outra (a divergência de razão fica no registro). Previu aceitar: nenhuma chamada extra (o caminho comum custa zero).
+- **A API aceitou o que a pré-checagem recusou:** a divergência é registrada (`precheck_divergence`), **o preço parcial nunca é exibido** (a invariante de preço ignora cotações `precheck`, e a referência que o humano recebe também) e a conversa segue como se nada tivesse acontecido.
+- **A API está fora:** handoff `QUOTE_UNAVAILABLE` (`quote_api`) com o veredito (`precheck: recusa_provavel`) no pacote; o lead lê o texto de instabilidade, nunca "recusado".
+- **Ano-modelo futuro** (e idade impossível) vão a `DATA_AMBIGUOUS` **na hora**, sem perguntar o resto: um humano decide (a API recusaria, mas pode ser um modelo do próximo ano).
+- **Contrato** ([`tests/test_precheck.py`](tests/test_precheck.py), [`tests/integration/test_precheck_contract.py`](tests/integration/test_precheck_contract.py)): as bordas de cada faixa (derivadas do `/planos`: `lo-1, lo, hi, hi+1`) × as bordas do carro, mais 400 pares aleatórios com **semente registrada** (20261021), comparados com a **lógica vendorizada do serviço** (em 4 datas, incluindo a virada do ano) e com a **API HTTP real**: 488 casos, 0 divergências. As duas direções reprovam, e um controle negativo prova que o teste tem dentes (regra errada de propósito → "PRÉ-CHECAGEM RECUSA E O SERVIÇO ACEITA").
+
+**Mídia sem transcrição** ([`media.py`](src/autoseguro/media.py)). `[audio]`, `[imagem]`, `[documento]` e `[video]` são **mídia pura**: o agente não a lê, não chama o LLM e **não extrai nada do que vem depois do marcador** (a descrição de um áudio é "mensagem de voz (12s)", e esse 12 não é idade de ninguém). Pede o dado em texto (com a próxima pergunta); a **segunda mídia seguida, sem nenhum dado novo no meio**, vai a `MEDIA_UNREADABLE`. Um dado novo zera a contagem. Limite assumido: a legenda de uma imagem não é lida.
+
+**Os outros motivos.** Reclamação, cancelamento e sinistro já eram template (D6) e agora têm cenário cada um, com o pacote conferido. `CONVERSATION_STALLED`: a **mesma pergunta** sem resposta útil 3 vezes seguidas (dúvidas de cobertura não contam: o lead está engajado). `OUT_OF_SCOPE`: a primeira mensagem fora de cotação é redirecionada, a segunda seguida vai ao humano. Os limites são constantes no orquestrador (`MEDIA_LIMIT`, `STALL_LIMIT`, `OFF_TOPIC_LIMIT`), **escolhidos por mim, não medidos**.
+
+**Os evals** ([`evals/`](evals/), `make evals`). Duas fontes, **cinco critérios**, e o oráculo é sempre o **serviço**, nunca o próprio agente:
+- **Sintéticos** (34, escritos à mão, [`evals/scenarios.py`](evals/scenarios.py)): um por motivo de handoff (os 12 têm cenário; um teste reprova se surgir motivo sem cenário), cotação por plano, pro-rata, recusas e as **bordas** (75 anos e carro de 20 aceitos; 76 e 21 recusados). Datas relativas a `hoje`, então valem em qualquer dia.
+- **Derivados do dataset** ([`evals/dataset.py`](evals/dataset.py)): as **2.500 conversas** (não só 30) reproduzidas com as mensagens do **lead** mascaradas, lendo **só** `conversation_id`, `message_index`, `sender_role`, `message_type`, `message_body` (um teste exige que nenhuma das colunas que vazam o gabarito seja pedida). A amostra de **30** do relatório é determinística (semente + hash do id), espalhada pelos **desfechos do agente**. O texto do dataset **não entra no repo**: o relatório traz ids e agregados, as transcrições ficam em `var/evals/`.
+- **O harness responde só o que o roteiro do vendedor humano nunca pergunta** (cobertura e data de início), uma vez cada e só quando o agente pergunta; sem isso, 99% das conversas não chegariam a uma cotação. Todo o resto é a fala do lead.
+- **C1** nenhum preço inventado (todo `R$` dito é refeito no serviço com a entrada guardada daquela cotação); **C2** motivo de handoff correto nos sintéticos; **C3** cada cotação e cada recusa dita ao lead é refeita no serviço **com a mesma entrada** e concorda (e toda recusa liga a uma recusa registrada da API, sem o texto cru dela); **C4** exatamente uma mensagem terminal por turno; **C5** nenhuma PII gravada (inclusive CPF com verificadores válidos). **Resultado:** 5 de 5 em 100%, contra o serviço em processo e contra a API HTTP ([`evals/results/report.md`](evals/results/report.md), [`report_api.md`](evals/results/report_api.md)). **Os critérios têm dentes**: há teste de mutação (uma linha de desconto inventada na cotação; um serviço que mente e confirma a recusa) que os reprova.
+- **O que isto NÃO prova:** o `MockLLM` extrai com o mesmo leitor da ancoragem, então os evals dizem que o **sistema** não deixa um modelo inventar preço ou recusa, não que o modelo real converse bem; as conversas do dataset são reproduções (o lead respondia ao vendedor, não ao agente), então o desfecho do agente **não é comparado com o desfecho do dataset**, que não é usado.
+
+**Exportar o log** ([`logexport.py`](src/autoseguro/logexport.py), `make export-log`): transcrição, decisões por mensagem, cotações com **todas as tentativas** da `/quote`, slots e pacote de handoff, tudo do SQLite (já mascarado) e **varrido antes de escrever**: se achar PII, não exporta. A seção "Verificações" repete os critérios E3 do PLAN (LLM real registrado, cotação `ok`, retry visível, todo `R$` numa cotação, sem PII) para o autor saber se aquela execução serve para o README.
+
 ### Demais decisões
 
-Pré-checagem de elegibilidade e os demais motivos de handoff (Etapa 3): ver [`docs/PLAN.md`](docs/PLAN.md), seções 2, 7 e 8.
+Endurecimento do LLM (Etapa 4), webhook (5), execução com o LLM real (7) e entrega (8): ver [`docs/PLAN.md`](docs/PLAN.md), seções 2, 7 e 8.
 
 ## Estrutura
 
 | Caminho | Conteúdo |
 |---|---|
-| `src/autoseguro/` | Código do produto: `orchestrator` (a máquina de estados), `cli`, `anchoring`, `templates`, `questions`, `masker`, `store` (SQLite + `SqliteSink`), `mock_llm`, `quote_client`, `slots`, `facts`, `guardrail`, `handoff`, `budgets`, `pii`, `llm/` (interface, adaptadores, `GuardedLLM`, cota, fábrica) |
-| `tools/` | `smoke_llm.py`, `smoke_rescore.py` e as 15 mensagens escritas à mão; `scenarios.py` (os quatro cenários) |
+| `src/autoseguro/` | Código do produto: `orchestrator` (a máquina de estados), `cli`, `anchoring`, `precheck`, `refusals`, `media`, `templates`, `questions`, `masker`, `logexport`, `store` (SQLite + `SqliteSink`), `mock_llm`, `quote_client`, `slots`, `facts`, `guardrail`, `handoff`, `budgets`, `pii`, `llm/` (interface, adaptadores, `GuardedLLM`, cota, fábrica) |
+| `tools/` | `smoke_llm.py`, `smoke_rescore.py` e as 15 mensagens escritas à mão; `scenarios.py` (os quatro cenários); `evals.py`; `export_log.py`; `verify_clean.sh` |
+| `evals/` | Os evals (D9): `scenarios` (sintéticos), `dataset` (derivados, sem gabarito), `runner`, `criteria` (C1–C5), `report`, `service` (a lógica vendorizada em processo) e `results/` |
 | `analysis/` | Scripts de análise (só agregados) e `results/` |
 | `tests/` | Higiene do repo, análises, integração com a API |
 | `docs/` | `PLAN.md`, `FINDINGS.md`, `BACKLOG.md` (o que ficou de fora de propósito) |

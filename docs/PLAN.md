@@ -308,8 +308,10 @@ ai-logs/             conversas com IA, limpas (Etapa 8)
 | Mascarador de PII (antes do LLM e do banco) | ✅ | `masker.py` |
 | SQLite (4 tabelas) e `SqliteSink` | ✅ | `store.py` |
 | Orquestrador (máquina de estados), terminal e os quatro cenários | ✅ | `orchestrator.py`, `cli.py`, `tools/scenarios.py` |
-| Pré-checagem de elegibilidade e teste de contrato | ❌ | **3** |
-| Necessidade → plano, objeção, demais motivos de handoff | ❌ | **3** |
+| Pré-checagem de elegibilidade, confirmação pela API e teste de contrato | ✅ | `precheck.py`, `refusals.py`, `tests/test_precheck.py`, `tests/integration/test_precheck_contract.py` |
+| Necessidade → plano, objeção, os 12 motivos de handoff (mídia, parada, fora de escopo) | ✅ | `orchestrator.py`, `media.py`, `templates.py`, `tests/test_stage3.py` |
+| Evals (sintéticos + dataset, critérios C1–C5) | ✅ | `evals/`, `tests/test_evals.py` |
+| Exportação do log de uma execução | ✅ | `logexport.py`, `tools/export_log.py` |
 
 ## 12. Etapas
 
@@ -333,15 +335,17 @@ Terminal, `MockLLM` determinístico (mesma interface, com caminho de fallback pa
 **Entregue:** tudo acima, **sem acionar o corte** (as 4 tabelas e o disjuntor da camada de LLM ficaram). Testes em `tests/test_orchestrator.py`, `test_cli.py`, `test_masker.py`, `test_mock_llm.py`, `test_sqlite_sink.py` e, contra a API de teste, `tests/integration/test_orchestrator_real_api.py` (o preço que o lead lê é o que a API devolve, por plano; recusa de verdade; os quatro cenários). `make demo` roda os quatro cenários e grava `var/scenarios/`.
 **O que a 2b NÃO provou:** (a) nada com o modelo real: o `MockLLM` prova o encanamento (mascarar, ancorar, templates, cotar, registrar), **não** a qualidade da conversa; o caminho do LLM real foi exercitado só contra um servidor local falso (`test_cli.py`); (b) o estado vivo da conversa está na memória do processo (limite 6 de 14); (c) o teto de 20s com um LLM real lento: o teste usa um LLM que trava e um relógio virtual, não um provedor; (d) ~~as 2 suítes que dependem do SDK da Anthropic não rodaram no container 3.12~~ **fechado:** `make verify-clean` instala do `pyproject` num container `python:3.12-slim` limpo (`git archive`, nada do venv do host) e roda tudo, com `[dev,llm]` (1233 passam, 2 pulam por falta do dataset) e só com `[dev]` (1180 passam, 4 pulam, cada um com motivo: SDK ausente ou dataset ausente).
 
-### Etapa 3 — Cobertura de handoff e experiência · limite de 50 min
+### Etapa 3 — Cobertura de handoff e experiência · limite de 50 min · ✅ escrita e testada (mock)
+**Entregue:** pré-checagem com confirmação da API (só idade e ano, plano mais barato; divergência registrada, preço parcial nunca exibido; API fora → humano com o veredito no pacote); conjunto fechado de recusas; mídia sem transcrição (2ª seguida → `MEDIA_UNREADABLE`); `CONVERSATION_STALLED` (mesma pergunta, 3 vezes) e `OUT_OF_SCOPE` (2 seguidas); reclamação, cancelamento e sinistro com cenário; ano-modelo futuro direto a `DATA_AMBIGUOUS`. **Contrato:** 488 casos (bordas + 400 aleatórios, semente 20261021), 0 divergências, contra a lógica vendorizada (4 datas) e contra a API HTTP. **Evals** (adiantados do bônus da Etapa 6, em versão enxuta): 34 sintéticos + 2.500 conversas do dataset, C1–C5 em 100%. **Limites escolhidos, não medidos:** 2 mídias, 3 perguntas repetidas, 2 mensagens fora de escopo.
+*Plano original da etapa:*
 Todos os motivos de handoff; pré-checagem e chamada de confirmação; necessidade → plano; objeção; correções; CEP inválido; ano-modelo futuro; mídia.
 *Testes:* **contrato da pré-checagem contra a API real** (bordas derivadas do `/planos` + amostra aleatória com semente registrada; "pré-checagem recusa e a API aceita" falha o teste); um cenário por motivo de handoff; objeção: uma alternativa, segunda hesitação → `PRICE_OBJECTION`, sem desconto; nenhuma recusa dita sem a API.
 
 ### Etapa 4 — Endurecimento do LLM · limite de 15 min
 *Testes:* **mock hostil** que tenta emitir preço, plano inexistente, prazo ou desconto no `reply` (o guardrail barra e cai no template); injeção de prompt no texto do lead; falha/timeout do LLM → `SAFETY_GUARD` com componente `llm`.
 
-### Etapa 5 — Webhook FastAPI · **bônus**  ·  Etapa 6 — Evals completos · **bônus**
-Como antes (dedupe, ordem, concorrência; fixtures derivados do texto mascarado, simulador de lead, relatório com gates: 0 preço inventado, 100% dos motivos corretos, 100% das recusas iguais às da API).
+### Etapa 5 — Webhook FastAPI · **bônus**  ·  Etapa 6 — Evals completos · **bônus** (a versão enxuta dos evals já foi entregue com a Etapa 3)
+Como antes (dedupe, ordem, concorrência; fixtures derivados do texto mascarado, simulador de lead, relatório com gates: 0 preço inventado, 100% dos motivos corretos, 100% das recusas iguais às da API). **Já existe:** os critérios C1–C5 e o relatório (`make evals`). **Falta (bônus):** um simulador de lead que responda às perguntas do agente com a fala do dataset (hoje o harness só responde cobertura e data), dedupe/ordem/concorrência do webhook.
 
 ### Etapa 7 — Execução com LLM real e log · feita pelo autor
 Chave no `.env` (ignorado pelo git), no shell de quem roda. Semente escolhida para o log mostrar uma falha seguida de retry. Exporto o log do banco.
@@ -380,7 +384,10 @@ Cortar nesta ordem (o primeiro é o mais barato de perder):
 - O modo real não é determinístico: só o mock reproduz.
 - **O estado vivo da conversa (livro-razão, pergunta pendente, cotação exibida) está na memória do processo.** O SQLite guarda o registro (mensagens, cotações, tentativas, snapshot dos slots, pacote de handoff), não o estado: reiniciar o processo encerra a conversa, não a apaga. O webhook (Etapa 5, bônus) teria que reidratar o livro-razão do snapshot.
 - O LLM roda numa thread com prazo para o teto de 20s valer; se o provedor responder depois, a resposta é descartada, mas a requisição já foi feita e conta na cota.
-- Entrada que o `SlotLedger` recusa depois de verificada (ano-modelo futuro, data no passado) vai a `DATA_AMBIGUOUS` em vez de reperguntar; refinar isso é Etapa 3.
+- Entrada que o `SlotLedger` recusa depois de verificada (ano-modelo futuro, data no passado) vai a `DATA_AMBIGUOUS` em vez de reperguntar; o ano futuro agora é detectado na pré-checagem (sem perguntar o resto), a data no passado ainda só no fim.
+- Os limites de mídia (2), parada (3 perguntas) e fora de escopo (2) são **escolhas**, sem dado que as sustente; o dataset não tem a fala de um lead diante de um agente.
+- Os evals reproduzem as mensagens do lead do dataset, que respondiam ao vendedor humano; o harness só preenche cobertura e data. O `MockLLM` concorda com a ancoragem por construção: os 100% dizem que o sistema não deixa um modelo inventar preço ou recusa, não que o modelo real converse bem.
+- A legenda escrita junto de uma mídia não é lida (ela só chega ao agente se o canal a entregar como mensagem de texto).
 - O texto de recusa repete o `motivo` que a API devolveu, sem reescrevê-lo (hoje, sem acentos, como a API manda).
 - O mascarador reconhece CPF, e-mail, telefone, placa, caminho de home, segredos, data de nascimento por extenso e nome **introduzido** ("meu nome é…", "sou a…") ou conhecido; **não** reconhece um nome solto nem um endereço. O que ele deixa passar e o detector ainda vê vira `SAFETY_GUARD` componente `masker`.
 - Versões do Python verificadas: 3.12 e 3.14. A 3.13 está dentro da faixa declarada mas **não foi testada**.
