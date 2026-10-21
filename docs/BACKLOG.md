@@ -25,3 +25,13 @@ O que ficou de fora **de propósito**. Não são promessas: cada item diz por qu
 4. **Limitador de taxa configurável por modelo.**
    Hoje o limitador é fixo em 20 requisições por minuto (`FREE_RPM`, espaçamento mínimo de 3,15 s), o teto dos modelos `:free` do OpenRouter, e vale para qualquer modelo. Com um modelo pago ou um provedor de limite maior, esse espaçamento vira latência artificial. A espera já é medida por turno (`limiter_wait_s` no meta e no export), então a latência do sistema se separa do espaçamento; o que falta é poder configurar o rpm (e a janela) por modelo, na `LLMConfig`, em vez de uma constante.
    *Por que ficou de fora:* o modelo em uso é `:free`, o limite de 20 por minuto é o real, e a latência reportada já desconta a espera. *Vale fazer se:* o projeto passar a usar um modelo com limite maior.
+
+## Export
+
+5. **Seção do export com os textos do modelo trocados por desenho.**
+   Hoje a tabela de barrados lista só o que o modelo poderia ter conduzido; os textos que o guardrail marcou em turnos que o produto troca por desenho (pergunta de necessidade, confirmação, eco) só existem no banco (`meta.blocked_reply`). Na 2ª rodada do DEMO foram 7 textos, e para julgá-los foi preciso consultar o banco. Uma seção "Texto do modelo trocado por desenho, marcado pelo guardrail" no export os traria.
+   *Por que ficou de fora:* o número já respondeu o que ele existia para responder: o texto do modelo que chega ao lead é só a abertura. *Vale fazer se:* o texto do modelo voltar a conduzir turnos além da abertura.
+
+6. **Gravar `blocked_reply` também no caminho de risco.**
+   Nas intenções de risco o texto do modelo é sempre substituído por template, e quando o guardrail o marca (por exemplo `R1_dinheiro` na oferta de plano mais barato do cenário 4) o texto barrado não é gravado, só a regra. Não dá para julgar se foi falso positivo.
+   *Por que ficou de fora:* nesses turnos o texto do modelo nunca chega ao lead, então o falso positivo não tem custo. *Vale fazer se:* o guardrail passar a decidir algo nesses turnos.
