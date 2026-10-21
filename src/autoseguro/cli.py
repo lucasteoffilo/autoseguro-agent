@@ -34,6 +34,7 @@ ROOT = Path(__file__).resolve().parents[2]
 VENDORED_PLANOS = ROOT / "vendor" / "quote-service" / "data" / "plans.json"
 DEFAULT_API = "http://localhost:8000"
 FREE_RPM, FREE_DAILY_FALLBACK = 20, 50
+QUOTA_LOG = ROOT / "var" / "smoke" / "quota.jsonl"   # o contador de requisicoes ao provedor: uma so, dividida entre smoke, ping e conversa (a suite redireciona: tests/conftest.py)
 
 
 def load_env(path: Path) -> None:
@@ -68,7 +69,7 @@ def make_llm_for(mode: str, base: FactBase, *, env: dict[str, str] | None = None
     if env is None:
         load_env(ROOT / ".env")
     cfg = LLMConfig.from_env(env if env is not None else dict(os.environ))
-    quota = QuotaLog(quota_path or ROOT / "var" / "smoke" / "quota.jsonl", FREE_DAILY_FALLBACK)  # a cota do provedor e uma so: smoke e conversa dividem o contador
+    quota = QuotaLog(quota_path or QUOTA_LOG, FREE_DAILY_FALLBACK)
     if cfg.model.endswith(":free"):
         quota.daily_limit = quota.last_remote_limit() or FREE_DAILY_FALLBACK
     else:

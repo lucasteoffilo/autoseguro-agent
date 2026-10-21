@@ -8,6 +8,7 @@ from pathlib import Path
 import pytest
 
 ROOT = Path(__file__).resolve().parent.parent
+VAR = ROOT / "var"
 
 # Nenhum caminho do repo pode conter PII, nem de proposito: as amostras sinteticas dos testes sao montadas em tempo de execucao (tests/synthetic_pii.py).
 # Nao sao texto nosso: lockfile do servico vendorizado.
@@ -27,6 +28,21 @@ def _repo_files() -> list[Path]:
         paths = [p for p in ROOT.rglob("*") if not _FALLBACK_SKIP_DIRS & set(p.relative_to(ROOT).parts)
                  and not any(part.endswith(_FALLBACK_SKIP_SUFFIXES) for part in p.relative_to(ROOT).parts)]
     return [p for p in paths if p.is_file()]
+
+
+# --- a suite nao escreve no var/ real ---------------------------------------------------------------------------------------------------------------
+# var/ guarda o que e de quem roda o projeto: o contador de cota do provedor (var/smoke/quota.jsonl), os bancos e os logs. A cota de cada teste vai para um tmp (fixture abaixo);
+# o que escapar disso reprova a execucao inteira no fim, com a lista do que mudou em var/.
+def pytest_configure(config):
+    from tests.var_guard import VarGuard
+    config.pluginmanager.register(VarGuard(VAR), "var-guard")
+
+
+@pytest.fixture(autouse=True)
+def _isolate_quota_log(monkeypatch, tmp_path_factory):
+    """Todo teste que monta o orquestrador (ou o LLM) pelo cli usa uma cota em tmp, nunca a de var/smoke/quota.jsonl."""
+    from autoseguro import cli
+    monkeypatch.setattr(cli, "QUOTA_LOG", tmp_path_factory.mktemp("quota") / "quota.jsonl")
 
 
 @pytest.fixture(autouse=True)
