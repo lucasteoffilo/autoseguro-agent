@@ -143,6 +143,13 @@ from tests.test_orchestrator import BASE, ScriptedLLM, reply_json  # noqa: E402
     ({"reply_source": "template_question", "asked": ["veiculo_ano", "ask"]}, "trocado_orquestrador", []),
     ({"reply_source": "template_question", "asked": ["necessidade", "ask"]}, "trocado_produto", []),
     ({"reply_source": "template_question", "asked": ["idade", "confirm"]}, "trocado_produto", []),
+    ({"reply_source": "template_echo", "asked": ["idade", "ask"], "echo": "Anotado: modelo 2019."}, "trocado_produto", []),
+    ({"reply_source": "template_question", "asked": ["idade", "ask"], "echo": "Anotado: modelo 2019."}, "trocado_produto", []),
+    # o desenho vem ANTES do guardrail: o texto do modelo seria trocado de qualquer jeito, entao a regra violada ali nao e "barrado"
+    ({"reply_source": "template_fallback", "violations": ["R2_cobertura_sem_fato"], "asked": ["necessidade", "ask"]}, "trocado_produto", []),
+    ({"reply_source": "template_fallback", "violations": ["R1_dinheiro"], "asked": ["idade", "confirm"]}, "trocado_produto", []),
+    ({"reply_source": "template_fallback", "violations": ["R1_dinheiro"], "asked": ["veiculo_ano", "ask"]}, "barrado", ["R1_dinheiro"]),
+    ({"reply_source": "template_fallback", "violations": ["sem_saida"], "asked": ["necessidade", "ask"]}, "sem_saida", []),
     ({"reply_source": "template_risk"}, "template", []), ({"reply_source": "template_quote"}, "template", []), ({"reply_source": "template_state"}, "template", []),
     ({}, "template", []),
 ])
@@ -154,8 +161,8 @@ def test_a_normal_conversation_splits_into_model_text_product_questions_and_temp
     h = Harness(ess())
     h.run(*HAPPY)
     o = origins_of(h.store.messages(h.trace))
-    assert dict(o.counts) == {"llm": 1, "template": 3} and o.total == 4 and o.candidates == 1
-    assert dict(o.sources) == {"template_echo": 2, "template_quote": 1}
+    assert dict(o.counts) == {"llm": 1, "trocado_produto": 2, "template": 1} and o.total == 4 and o.candidates == 1
+    assert dict(o.sources) == {"template_quote": 1}
     md = export_markdown(h.store, h.trace)
     assert "## De onde veio cada texto que o lead leu" in md
     assert "| Texto do modelo, entregue | 1 | `llm` | — |" in md
@@ -245,6 +252,17 @@ def test_the_index_lists_the_blocked_texts_of_every_conversation(tmp_path):
     assert export_log.main(["--db", str(db), "--trace", "all", "--out", str(out)]) == 0
     index = (out / "index.md").read_text(encoding="utf-8")
     assert "### Textos do modelo barrados pelo guardrail (todas as conversas)" in index and f"| `{h.trace}` 2 | " in index and "Hoje mesmo você já fica coberto." in index
+
+
+def test_a_model_text_the_guardrail_would_block_is_not_a_block_when_the_pending_data_is_the_necessity_or_a_confirmation():
+    """A causa dos 4 barrados da rodada do DEMO: o modelo redigindo a pergunta de necessidade (do produto, que o lead leu de qualquer jeito)."""
+    bad = reply_json("Qual cobertura você quer: roubo, colisão, vidros ou carro reserva?",
+                     slots=[("veiculo_ano", "2019", False), ("idade", "34", False), ("cep", "30130010", False)])
+    h = Harness(llm=ScriptedLLM(reply_json("Anotado!"), bad))
+    h.run(GREET, "é um onix 2019, tenho 34 anos e moro no cep 30130-010")
+    o = origins_of(h.store.messages(h.trace))
+    assert o.counts["barrado"] == 0 and o.counts["trocado_produto"] >= 1 and not o.rules
+    assert "_Nenhum texto do modelo foi barrado pelo guardrail._" in export_markdown(h.store, h.trace)
 
 
 def test_a_provider_filter_is_not_counted_as_a_guardrail_block_and_neither_is_the_orchestrators_swap():

@@ -59,7 +59,7 @@ BUCKETS = (
     ("barrado", "Texto do modelo barrado pelo guardrail", "`template_fallback`"),
     ("sem_saida", "Sem saída utilizável do modelo (falha, filtro do provedor, saída inválida)", "`template_fallback`, `sem_saida`"),
     ("trocado_orquestrador", "Texto do modelo trocado pelo orquestrador (não perguntava o dado pendente, ou tinha PII)", "`template_question`"),
-    ("trocado_produto", "Trocado por desenho (a pergunta de necessidade e as confirmações são do produto)", "`template_question`"),
+    ("trocado_produto", "Trocado por desenho (a pergunta de necessidade, as confirmações e o eco do que o lead acabou de dar são do produto)", "`template_question`, `template_echo`, e `template_fallback` nesses turnos"),
     ("template", "Template por desenho (risco, cotação, recusa, handoff, estado, mídia)", "`template_*`"),
 )
 CANDIDATES = ("llm", "barrado", "sem_saida", "trocado_orquestrador")   # as vezes em que o texto do modelo PODERIA ter chegado ao lead
@@ -86,16 +86,28 @@ class Origins:
         return self
 
 
+def _by_design(meta: dict[str, Any]) -> bool:
+    """O texto que o lead leu era do produto por desenho: a pergunta de necessidade, uma confirmação ou o eco do que o lead acabou de dar."""
+    asked = meta.get("asked") or []
+    return bool(meta.get("echo")) or meta.get("reply_source") == "template_echo" or (len(asked) == 2 and (asked[1] == "confirm" or asked[0] == "necessidade"))
+
+
 def classify_reply(meta: dict[str, Any]) -> tuple[str, list[str]]:
-    """(origem, regras do guardrail) de uma mensagem do agente, a partir do `meta` que o orquestrador gravou."""
+    """(origem, regras do guardrail) de uma mensagem do agente, a partir do `meta` que o orquestrador gravou.
+
+    Ordem: o modelo entregue; a falha do modelo (sem saída: não é decisão de desenho nem do guardrail); o desenho (necessidade, confirmação, eco) ANTES de olhar o guardrail, porque
+    nesses turnos o texto do modelo não seria usado de qualquer jeito e uma regra violada ali não é "barrado" de verdade; só então o guardrail e a troca do orquestrador."""
     source, violations = meta.get("reply_source", ""), list(meta.get("violations") or [])
     if source == "llm":
         return "llm", []
+    if source == "template_fallback" and violations == ["sem_saida"]:
+        return "sem_saida", []
+    if source in ("template_fallback", "template_question", "template_echo") and _by_design(meta):
+        return "trocado_produto", []
     if source == "template_fallback":
-        return ("sem_saida", []) if violations == ["sem_saida"] else ("barrado", violations)
+        return "barrado", violations
     if source == "template_question":
-        asked = meta.get("asked") or []
-        return ("trocado_produto", []) if (len(asked) == 2 and (asked[1] == "confirm" or asked[0] == "necessidade")) else ("trocado_orquestrador", [])
+        return "trocado_orquestrador", []
     return "template", []
 
 
