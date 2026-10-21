@@ -1,0 +1,90 @@
+{
+  "backend": "servico vendorizado em processo (relogio 2026-10-21)",
+  "checks": {
+    "C1": {
+      "denominator": 3933,
+      "failures": 0,
+      "info": {
+        "cotações recalculadas no serviço": 1764,
+        "mensagens com R$": 1764,
+        "valores em reais conferidos": 3933
+      },
+      "numerator": 3933,
+      "title": "Nenhum preço inventado"
+    },
+    "C2": {
+      "denominator": 34,
+      "failures": 0,
+      "info": {
+        "cenários de handoff": 17,
+        "motivos cobertos": "12/12"
+      },
+      "numerator": 34,
+      "title": "Motivo de handoff correto nos sintéticos"
+    },
+    "C3": {
+      "denominator": 2521,
+      "failures": 0,
+      "info": {
+        "cotações ditas ao lead": 1764,
+        "perfil recusável que terminou sem recusa (handoff ou aberto)": 2,
+        "recusas ditas ao lead": 757
+      },
+      "numerator": 2521,
+      "title": "Recusas e cotações batem com a API"
+    },
+    "C4": {
+      "denominator": 20078,
+      "failures": 0,
+      "info": {},
+      "numerator": 20078,
+      "title": "Uma mensagem terminal por turno"
+    },
+    "C5": {
+      "denominator": 2534,
+      "failures": 0,
+      "info": {},
+      "numerator": 2534,
+      "title": "Nenhuma PII gravada"
+    }
+  },
+  "dataset": {
+    "conversations": 2500,
+    "distribution": {
+      "handoff:MEDIA_UNREADABLE": 231,
+      "handoff:PRICE_OBJECTION": 78,
+      "handoff:READY_TO_CLOSE": 294,
+      "quoted": 1146,
+      "refused": 751
+    },
+    "lead_messages": 16470,
+    "reached_quote": 1749,
+    "scripted_answers": 3498,
+    "seconds": 14.972960082995996,
+    "with_media": 1420,
+    "with_pii": 2500
+  },
+  "passes": true,
+  "seed": 20261021,
+  "synthetic": {
+    "distribution": {
+      "handoff:CANCELLATION": 1,
+      "handoff:CLAIM_SINISTRO": 1,
+      "handoff:COMPLAINT": 1,
+      "handoff:CONVERSATION_STALLED": 1,
+      "handoff:DATA_AMBIGUOUS": 2,
+      "handoff:HUMAN_REQUESTED": 2,
+      "handoff:MEDIA_UNREADABLE": 1,
+      "handoff:OUT_OF_SCOPE": 1,
+      "handoff:PRICE_OBJECTION": 2,
+      "handoff:QUOTE_UNAVAILABLE": 2,
+      "handoff:READY_TO_CLOSE": 1,
+      "handoff:SAFETY_GUARD": 2,
+      "open": 1,
+      "quoted": 10,
+      "refused": 6
+    },
+    "scenarios": 34
+  },
+  "today": "2026-10-21"
+}
