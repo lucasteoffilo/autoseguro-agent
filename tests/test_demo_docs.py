@@ -63,7 +63,7 @@ def test_scenario_5_is_a_human_request_handoff():
 
 def test_scenario_6_confirms_the_model_year_and_quotes_with_2016():
     r = run(6)
-    assert r.status == "quoted" and any(m["text"] == "Só pra confirmar: modelo 2016?" for m in r.agent)
+    assert r.status == "quoted" and any(m["text"].endswith("Só pra confirmar: modelo 2016?") for m in r.agent)
     assert '"veiculo_ano": 2016' in r.quotes[0]["request"]
 
 

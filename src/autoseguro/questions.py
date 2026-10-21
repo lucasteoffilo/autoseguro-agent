@@ -74,6 +74,21 @@ def confirm(slot: str, *, proposed: str | None = None, candidates: Sequence[str]
     return ask(slot, base)
 
 
+def echo(new: Mapping[str, str], plano_nome: str | None = None) -> str:
+    """O reconhecimento do que o turno VERIFICOU ("Anotado: modelo 2021, 34 anos e CEP 30130-010."), montado so de valores verificados do ledger: nunca o que o modelo escreveu, e nunca preco.
+    A necessidade aparece como o plano que ela escolhe ("cobertura do plano Completo"), pelo nome vindo do /planos."""
+    parts = []
+    for slot in ("veiculo_ano", "idade", "cep", "necessidade", "data_inicio"):
+        if slot not in new:
+            continue
+        if slot == "necessidade":
+            if plano_nome:
+                parts.append(f"cobertura do plano {plano_nome}")
+        else:
+            parts.append(("início em " if slot == "data_inicio" else "") + fmt_value(slot, new[slot]))
+    return "Anotado: " + _join(parts) + "." if parts else ""
+
+
 def recap(verified: Mapping[str, str], plano_nome: str | None = None) -> str:
     """Os dados que entram na cotacao, para a mensagem de cotacao mostrar ao lead (rede VISIVEL: se algo estiver errado, ele ve)."""
     order = ("veiculo_ano", "idade", "cep", "data_inicio")

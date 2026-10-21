@@ -153,21 +153,21 @@ def test_the_plan_follows_the_need_the_lead_described(need, plano, step):
 def test_the_necessity_question_is_the_products_and_lists_the_options_from_the_plans():
     h = Harness()
     h.run(GREET, DATA)
-    assert h.agent[-1]["text"] == questions.ask("necessidade", BASE) and h.agent[-1]["kind"] == "question"
-    assert "danos a terceiros e vidros" in h.agent[-1]["text"] and h.meta(h.agent[-1])["reply_source"] in ("template_question", "template_fallback")
+    assert h.agent[-1]["text"] == f"Anotado: modelo 2019, 34 anos e CEP 30130-010. {questions.ask('necessidade', BASE)}" and h.agent[-1]["kind"] == "question"
+    assert "danos a terceiros e vidros" in h.agent[-1]["text"] and h.meta(h.agent[-1])["reply_source"] in ("template_echo", "template_fallback")
 
 
 def test_a_neutral_reply_that_asks_for_a_different_data_than_the_state_wants_is_replaced_by_the_products_question():
     """Quem decide o proximo passo e o estado: se o modelo pergunta o CEP e falta a idade, o lead le a pergunta da idade (e a pergunta pendente bate com o que foi perguntado)."""
     h = Harness(llm=ScriptedLLM(reply_json("Anotado! Qual é o seu CEP?", slots=[("veiculo_ano", "2019", False)])))
     r = h.say("meu carro é 2019")
-    assert r.terminal[0].text == questions.ask("idade") and r.terminal[0].kind == "question"
-    assert h.meta(h.agent[0])["reply_source"] == "template_question" and h.orc._convs[h.trace].asked == ("idade", "ask")
+    assert r.terminal[0].text == f"Anotado: modelo 2019. {questions.ask('idade')}" and r.terminal[0].kind == "question"
+    assert h.meta(h.agent[0])["reply_source"] == "template_echo" and h.orc._convs[h.trace].asked == ("idade", "ask")
 
 
 def test_a_neutral_reply_without_a_question_is_replaced_too():
     h = Harness(llm=ScriptedLLM(reply_json("Anotado, obrigado!", slots=[("veiculo_ano", "2019", False)])))
-    assert h.say("meu carro é 2019").terminal[0].text == questions.ask("idade")
+    assert h.say("meu carro é 2019").terminal[0].text == f"Anotado: modelo 2019. {questions.ask('idade')}"
 
 
 def test_a_neutral_llm_reply_that_asks_the_next_data_is_used_as_is():
@@ -492,7 +492,7 @@ def test_a_reply_that_names_coverages_without_citing_a_fact_never_asks_the_neces
                                                                                                 ("cep", "30130010", False)])
     h = Harness(llm=ScriptedLLM(bad))
     r = h.say(DATA)
-    assert r.terminal[0].text == questions.ask("necessidade", BASE)
+    assert r.terminal[0].text == f"Anotado: modelo 2019, 34 anos e CEP 30130-010. {questions.ask('necessidade', BASE)}"
 
 
 def test_a_reply_that_leaks_pii_is_replaced_even_if_the_guardrail_would_let_it_through():

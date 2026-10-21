@@ -154,12 +154,12 @@ def test_a_normal_conversation_splits_into_model_text_product_questions_and_temp
     h = Harness(ess())
     h.run(*HAPPY)
     o = origins_of(h.store.messages(h.trace))
-    assert dict(o.counts) == {"llm": 2, "trocado_produto": 1, "template": 1} and o.total == 4 and o.candidates == 2
-    assert dict(o.sources) == {"template_quote": 1}
+    assert dict(o.counts) == {"llm": 1, "template": 3} and o.total == 4 and o.candidates == 1
+    assert dict(o.sources) == {"template_echo": 2, "template_quote": 1}
     md = export_markdown(h.store, h.trace)
     assert "## De onde veio cada texto que o lead leu" in md
-    assert "| Texto do modelo, entregue | 2 | `llm` | — |" in md
-    assert "**Fração do modelo:** 2 de 4 respostas ao lead (50%); 2 de 2 em que o texto do modelo poderia ter chegado (100%). **Barrados pelo guardrail:** 0 (0% das vezes" in md
+    assert "| Texto do modelo, entregue | 1 | `llm` | — |" in md
+    assert "**Fração do modelo:** 1 de 4 respostas ao lead (25%); 1 de 1 em que o texto do modelo poderia ter chegado (100%). **Barrados pelo guardrail:** 0 (0% das vezes" in md
 
 
 def test_a_reply_the_guardrail_blocked_is_counted_with_the_rule_that_blocked_it_and_its_text_is_exported_for_judging():
@@ -275,9 +275,9 @@ def test_the_index_has_the_fraction_per_conversation_and_the_total(tmp_path):
     out = tmp_path / "logs"
     assert export_log.main(["--db", str(db), "--trace", "all", "--out", str(out)]) == 0
     index = (out / "index.md").read_text(encoding="utf-8")
-    assert f"| `{h.trace}` | quoted |" in index and "| 2/4 | 0 |" in index and f"| `{t2}` | open |" in index and "| 1/1 | 0 |" in index and f"| `{t3}` | handoff | HUMAN_REQUESTED |" in index and "| 0/1 | 0 |" in index
+    assert f"| `{h.trace}` | quoted |" in index and "| 1/4 | 0 |" in index and f"| `{t2}` | open |" in index and "| 1/1 | 0 |" in index and f"| `{t3}` | handoff | HUMAN_REQUESTED |" in index and "| 0/1 | 0 |" in index
     assert "## Total das 3 conversas: de onde veio cada texto que o lead leu" in index
-    assert "**Fração do modelo:** 3 de 6 respostas ao lead (50%); 3 de 3 em que o texto do modelo poderia ter chegado (100%)." in index
+    assert "**Fração do modelo:** 2 de 6 respostas ao lead (33%); 2 de 2 em que o texto do modelo poderia ter chegado (100%)." in index
     assert "prefiro falar" not in index
 
 

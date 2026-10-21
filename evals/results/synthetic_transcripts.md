@@ -5,9 +5,9 @@
 - **lead** › oi
 - **agente** [text] › Olá! Sou a assistente virtual da AutoSeguro. Qual é o ano do modelo do seu carro?
 - **lead** › é um onix 2019, tenho 34 anos e moro no cep 30130-010
-- **agente** [question] › O que você quer cobrir? Só colisão, roubo e furto; também danos a terceiros e vidros; ou também carro reserva e assistência 24h?
+- **agente** [question] › Anotado: modelo 2019, 34 anos e CEP 30130-010. O que você quer cobrir? Só colisão, roubo e furto; também danos a terceiros e vidros; ou também carro reserva e assistência 24h?
 - **lead** › só roubo e colisão
-- **agente** [text] › Anotado! Em que dia você quer que o seguro comece a valer?
+- **agente** [question] › Anotado: cobertura do plano Essencial. Em que dia você quer que o seguro comece a valer?
 - **lead** › começando dia 01/11/2026
 - **agente** [quote] › Aqui está a cotação do plano Essencial:
   • Mensalidade: R$ 137,88
@@ -22,9 +22,9 @@
 - **lead** › oi
 - **agente** [text] › Olá! Sou a assistente virtual da AutoSeguro. Qual é o ano do modelo do seu carro?
 - **lead** › é um onix 2019, tenho 34 anos e moro no cep 30130-010
-- **agente** [question] › O que você quer cobrir? Só colisão, roubo e furto; também danos a terceiros e vidros; ou também carro reserva e assistência 24h?
+- **agente** [question] › Anotado: modelo 2019, 34 anos e CEP 30130-010. O que você quer cobrir? Só colisão, roubo e furto; também danos a terceiros e vidros; ou também carro reserva e assistência 24h?
 - **lead** › quero cobrir terceiros e vidros também
-- **agente** [text] › Anotado! Em que dia você quer que o seguro comece a valer?
+- **agente** [question] › Anotado: cobertura do plano Completo. Em que dia você quer que o seguro comece a valer?
 - **lead** › começando dia 01/11/2026
 - **agente** [quote] › Aqui está a cotação do plano Completo:
   • Mensalidade: R$ 241,38
@@ -39,9 +39,9 @@
 - **lead** › oi
 - **agente** [text] › Olá! Sou a assistente virtual da AutoSeguro. Qual é o ano do modelo do seu carro?
 - **lead** › é um onix 2019, tenho 34 anos e moro no cep 30130-010
-- **agente** [question] › O que você quer cobrir? Só colisão, roubo e furto; também danos a terceiros e vidros; ou também carro reserva e assistência 24h?
+- **agente** [question] › Anotado: modelo 2019, 34 anos e CEP 30130-010. O que você quer cobrir? Só colisão, roubo e furto; também danos a terceiros e vidros; ou também carro reserva e assistência 24h?
 - **lead** › quero carro reserva e assistência 24h, a completa
-- **agente** [text] › Anotado! Em que dia você quer que o seguro comece a valer?
+- **agente** [question] › Anotado: cobertura do plano Premium. Em que dia você quer que o seguro comece a valer?
 - **lead** › começando dia 01/11/2026
 - **agente** [quote] › Aqui está a cotação do plano Premium:
   • Mensalidade: R$ 390,88
@@ -56,9 +56,9 @@
 - **lead** › oi
 - **agente** [text] › Olá! Sou a assistente virtual da AutoSeguro. Qual é o ano do modelo do seu carro?
 - **lead** › é um onix 2019, tenho 34 anos e moro no cep 30130-010
-- **agente** [question] › O que você quer cobrir? Só colisão, roubo e furto; também danos a terceiros e vidros; ou também carro reserva e assistência 24h?
+- **agente** [question] › Anotado: modelo 2019, 34 anos e CEP 30130-010. O que você quer cobrir? Só colisão, roubo e furto; também danos a terceiros e vidros; ou também carro reserva e assistência 24h?
 - **lead** › só roubo e colisão
-- **agente** [text] › Anotado! Em que dia você quer que o seguro comece a valer?
+- **agente** [question] › Anotado: cobertura do plano Essencial. Em que dia você quer que o seguro comece a valer?
 - **lead** › começando dia 15/11/2026
 - **agente** [quote] › Aqui está a cotação do plano Essencial:
   • Mensalidade: R$ 137,88
@@ -72,7 +72,7 @@
 #### `cotacao-quatro-dados-numa-mensagem` — quoted
 
 - **lead** › oi, quero cotar: onix 2023, 29 anos, cep 01310-100, começando dia 01/11/2026
-- **agente** [question] › O que você quer cobrir? Só colisão, roubo e furto; também danos a terceiros e vidros; ou também carro reserva e assistência 24h?
+- **agente** [question] › Anotado: modelo 2023, 29 anos, CEP 01310-100 e início em 01/11/2026 (domingo). O que você quer cobrir? Só colisão, roubo e furto; também danos a terceiros e vidros; ou também carro reserva e assistência 24h?
 - **lead** › só roubo e colisão
 - **agente** [quote] › Aqui está a cotação do plano Essencial:
   • Mensalidade: R$ 149,88
@@ -87,9 +87,9 @@
 - **lead** › oi
 - **agente** [text] › Olá! Sou a assistente virtual da AutoSeguro. Qual é o ano do modelo do seu carro?
 - **lead** › é um onix 2019, tenho 34 anos e moro no cep 30130-010
-- **agente** [question] › O que você quer cobrir? Só colisão, roubo e furto; também danos a terceiros e vidros; ou também carro reserva e assistência 24h?
+- **agente** [question] › Anotado: modelo 2019, 34 anos e CEP 30130-010. O que você quer cobrir? Só colisão, roubo e furto; também danos a terceiros e vidros; ou também carro reserva e assistência 24h?
 - **lead** › só roubo e colisão
-- **agente** [text] › Anotado! Em que dia você quer que o seguro comece a valer?
+- **agente** [question] › Anotado: cobertura do plano Essencial. Em que dia você quer que o seguro comece a valer?
 - **lead** › começando dia 01/11/2026
 - **agente** [quote] › Aqui está a cotação do plano Essencial:
   • Mensalidade: R$ 137,88
@@ -110,9 +110,9 @@
 - **lead** › e a carência, como funciona?
 - **agente** [text] › Roubo e furto só passam a valer 30 dias depois do início da vigência (carência). Qual é o ano do modelo do seu carro? Se o documento mostra dois anos, como 2015/2016, vale o segundo.
 - **lead** › é um onix 2019, tenho 34 anos e moro no cep 30130-010
-- **agente** [question] › O que você quer cobrir? Só colisão, roubo e furto; também danos a terceiros e vidros; ou também carro reserva e assistência 24h?
+- **agente** [question] › Anotado: modelo 2019, 34 anos e CEP 30130-010. O que você quer cobrir? Só colisão, roubo e furto; também danos a terceiros e vidros; ou também carro reserva e assistência 24h?
 - **lead** › só roubo e colisão
-- **agente** [text] › Anotado! Em que dia você quer que o seguro comece a valer?
+- **agente** [question] › Anotado: cobertura do plano Essencial. Em que dia você quer que o seguro comece a valer?
 - **lead** › começando dia 01/11/2026
 - **agente** [quote] › Aqui está a cotação do plano Essencial:
   • Mensalidade: R$ 137,88
@@ -129,9 +129,9 @@
 - **lead** › [audio] mensagem de voz (9s)
 - **agente** [question] › Por aqui eu só leio mensagens de texto, então não consegui abrir o seu áudio. Qual é o ano do modelo do seu carro? Se o documento mostra dois anos, como 2015/2016, vale o segundo.
 - **lead** › é um onix 2019, tenho 34 anos e moro no cep 30130-010
-- **agente** [question] › O que você quer cobrir? Só colisão, roubo e furto; também danos a terceiros e vidros; ou também carro reserva e assistência 24h?
+- **agente** [question] › Anotado: modelo 2019, 34 anos e CEP 30130-010. O que você quer cobrir? Só colisão, roubo e furto; também danos a terceiros e vidros; ou também carro reserva e assistência 24h?
 - **lead** › só roubo e colisão
-- **agente** [text] › Anotado! Em que dia você quer que o seguro comece a valer?
+- **agente** [question] › Anotado: cobertura do plano Essencial. Em que dia você quer que o seguro comece a valer?
 - **lead** › começando dia 01/11/2026
 - **agente** [quote] › Aqui está a cotação do plano Essencial:
   • Mensalidade: R$ 137,88
@@ -173,9 +173,9 @@
 - **lead** › oi
 - **agente** [text] › Olá! Sou a assistente virtual da AutoSeguro. Qual é o ano do modelo do seu carro?
 - **lead** › é um gol 2006, tenho 75 anos e moro no cep 30130-010
-- **agente** [question] › O que você quer cobrir? Só colisão, roubo e furto; também danos a terceiros e vidros; ou também carro reserva e assistência 24h?
+- **agente** [question] › Anotado: modelo 2006, 75 anos e CEP 30130-010. O que você quer cobrir? Só colisão, roubo e furto; também danos a terceiros e vidros; ou também carro reserva e assistência 24h?
 - **lead** › só roubo e colisão
-- **agente** [text] › Anotado! Em que dia você quer que o seguro comece a valer?
+- **agente** [question] › Anotado: cobertura do plano Essencial. Em que dia você quer que o seguro comece a valer?
 - **lead** › começando dia 01/11/2026
 - **agente** [quote] › Aqui está a cotação do plano Essencial:
   • Mensalidade: R$ 243,40
@@ -208,9 +208,9 @@
 - **lead** › oi
 - **agente** [text] › Olá! Sou a assistente virtual da AutoSeguro. Qual é o ano do modelo do seu carro?
 - **lead** › é um onix 2019, tenho 18 anos e moro no cep 30130-010
-- **agente** [question] › O que você quer cobrir? Só colisão, roubo e furto; também danos a terceiros e vidros; ou também carro reserva e assistência 24h?
+- **agente** [question] › Anotado: modelo 2019, 18 anos e CEP 30130-010. O que você quer cobrir? Só colisão, roubo e furto; também danos a terceiros e vidros; ou também carro reserva e assistência 24h?
 - **lead** › só roubo e colisão
-- **agente** [text] › Anotado! Em que dia você quer que o seguro comece a valer?
+- **agente** [question] › Anotado: cobertura do plano Essencial. Em que dia você quer que o seguro comece a valer?
 - **lead** › começando dia 01/11/2026
 - **agente** [quote] › Aqui está a cotação do plano Essencial:
   • Mensalidade: R$ 220,62
@@ -225,10 +225,11 @@
 - **lead** › oi
 - **agente** [text] › Olá! Sou a assistente virtual da AutoSeguro. Qual é o ano do modelo do seu carro?
 - **lead** › é um onix 2019, tenho 34 anos e moro no cep 30130-010
-- **agente** [question] › O que você quer cobrir? Só colisão, roubo e furto; também danos a terceiros e vidros; ou também carro reserva e assistência 24h?
+- **agente** [question] › Anotado: modelo 2019, 34 anos e CEP 30130-010. O que você quer cobrir? Só colisão, roubo e furto; também danos a terceiros e vidros; ou também carro reserva e assistência 24h?
 - **lead** › só roubo e colisão
-- **agente** [text] › Anotado! Em que dia você quer que o seguro comece a valer?
+- **agente** [question] › Anotado: cobertura do plano Essencial. Em que dia você quer que o seguro comece a valer?
 - **lead** › pode começar dia 01/11/2026
+- **agente** [hold] › Um instante, estou calculando a sua cotação.
 - **agente** [handoff] › Não consegui gerar a sua cotação agora: o sistema que calcula os valores está instável. Como só passo valores que esse sistema confirma, prefiro não estimar nenhum preço. Um consultor vai dar continuidade à sua conversa, e o que você me contou ficou registrado.
 
 #### `handoff-quote-unavailable-na-pre-checagem` — handoff:QUOTE_UNAVAILABLE (precheck:attempts_exhausted:connection)
@@ -236,6 +237,7 @@
 - **lead** › oi
 - **agente** [text] › Olá! Sou a assistente virtual da AutoSeguro. Qual é o ano do modelo do seu carro?
 - **lead** › é um fusca 1998, tenho 45 anos e moro no cep 01310-100
+- **agente** [hold] › Um instante, estou calculando a sua cotação.
 - **agente** [handoff] › Não consegui gerar a sua cotação agora: o sistema que calcula os valores está instável. Como só passo valores que esse sistema confirma, prefiro não estimar nenhum preço. Um consultor vai dar continuidade à sua conversa, e o que você me contou ficou registrado.
 
 #### `handoff-human-requested` — handoff:HUMAN_REQUESTED
@@ -250,7 +252,7 @@
 - **lead** › oi
 - **agente** [text] › Olá! Sou a assistente virtual da AutoSeguro. Qual é o ano do modelo do seu carro?
 - **lead** › é um onix 2019, tenho 34 anos e moro no cep 30130-010
-- **agente** [question] › O que você quer cobrir? Só colisão, roubo e furto; também danos a terceiros e vidros; ou também carro reserva e assistência 24h?
+- **agente** [question] › Anotado: modelo 2019, 34 anos e CEP 30130-010. O que você quer cobrir? Só colisão, roubo e furto; também danos a terceiros e vidros; ou também carro reserva e assistência 24h?
 - **lead** › quero falar com um atendente
 - **agente** [handoff] › Claro. Um consultor vai dar continuidade à sua conversa, e o que você me contou ficou registrado.
 
@@ -305,9 +307,9 @@
 - **lead** › oi
 - **agente** [text] › Olá! Sou a assistente virtual da AutoSeguro. Qual é o ano do modelo do seu carro?
 - **lead** › é um onix 2019, tenho 34 anos e moro no cep 30130-010
-- **agente** [question] › O que você quer cobrir? Só colisão, roubo e furto; também danos a terceiros e vidros; ou também carro reserva e assistência 24h?
+- **agente** [question] › Anotado: modelo 2019, 34 anos e CEP 30130-010. O que você quer cobrir? Só colisão, roubo e furto; também danos a terceiros e vidros; ou também carro reserva e assistência 24h?
 - **lead** › só roubo e colisão
-- **agente** [text] › Anotado! Em que dia você quer que o seguro comece a valer?
+- **agente** [question] › Anotado: cobertura do plano Essencial. Em que dia você quer que o seguro comece a valer?
 - **lead** › começando dia 01/11/2026
 - **agente** [quote] › Aqui está a cotação do plano Essencial:
   • Mensalidade: R$ 137,88
@@ -335,9 +337,9 @@
 - **lead** › oi
 - **agente** [text] › Olá! Sou a assistente virtual da AutoSeguro. Qual é o ano do modelo do seu carro?
 - **lead** › é um onix 2019, tenho 34 anos e moro no cep 30130-010
-- **agente** [question] › O que você quer cobrir? Só colisão, roubo e furto; também danos a terceiros e vidros; ou também carro reserva e assistência 24h?
+- **agente** [question] › Anotado: modelo 2019, 34 anos e CEP 30130-010. O que você quer cobrir? Só colisão, roubo e furto; também danos a terceiros e vidros; ou também carro reserva e assistência 24h?
 - **lead** › quero cobrir terceiros e vidros também
-- **agente** [text] › Anotado! Em que dia você quer que o seguro comece a valer?
+- **agente** [question] › Anotado: cobertura do plano Completo. Em que dia você quer que o seguro comece a valer?
 - **lead** › começando dia 01/11/2026
 - **agente** [quote] › Aqui está a cotação do plano Completo:
   • Mensalidade: R$ 241,38
@@ -356,9 +358,9 @@
 - **lead** › oi
 - **agente** [text] › Olá! Sou a assistente virtual da AutoSeguro. Qual é o ano do modelo do seu carro?
 - **lead** › é um onix 2019, tenho 34 anos e moro no cep 30130-010
-- **agente** [question] › O que você quer cobrir? Só colisão, roubo e furto; também danos a terceiros e vidros; ou também carro reserva e assistência 24h?
+- **agente** [question] › Anotado: modelo 2019, 34 anos e CEP 30130-010. O que você quer cobrir? Só colisão, roubo e furto; também danos a terceiros e vidros; ou também carro reserva e assistência 24h?
 - **lead** › quero cobrir terceiros e vidros também
-- **agente** [text] › Anotado! Em que dia você quer que o seguro comece a valer?
+- **agente** [question] › Anotado: cobertura do plano Completo. Em que dia você quer que o seguro comece a valer?
 - **lead** › começando dia 01/11/2026
 - **agente** [quote] › Aqui está a cotação do plano Completo:
   • Mensalidade: R$ 241,38
@@ -379,9 +381,9 @@
 - **lead** › oi
 - **agente** [text] › Olá! Sou a assistente virtual da AutoSeguro. Qual é o ano do modelo do seu carro?
 - **lead** › é um onix 2019, tenho 34 anos e moro no cep 30130-010
-- **agente** [question] › O que você quer cobrir? Só colisão, roubo e furto; também danos a terceiros e vidros; ou também carro reserva e assistência 24h?
+- **agente** [question] › Anotado: modelo 2019, 34 anos e CEP 30130-010. O que você quer cobrir? Só colisão, roubo e furto; também danos a terceiros e vidros; ou também carro reserva e assistência 24h?
 - **lead** › só roubo e colisão
-- **agente** [text] › Anotado! Em que dia você quer que o seguro comece a valer?
+- **agente** [question] › Anotado: cobertura do plano Essencial. Em que dia você quer que o seguro comece a valer?
 - **lead** › começando dia 01/11/2026
 - **agente** [quote] › Aqui está a cotação do plano Essencial:
   • Mensalidade: R$ 137,88
@@ -402,7 +404,7 @@
 - **lead** › e um seguro de viagem?
 - **agente** [handoff] › Isso foge do que eu consigo ajudar: eu só faço cotação de seguro de carro. Um consultor vai dar continuidade à sua conversa, e o que você me contou ficou registrado.
 
-#### `handoff-safety-guard-llm-fora` — handoff:SAFETY_GUARD (http_503)
+#### `handoff-safety-guard-llm-fora` — handoff:SAFETY_GUARD (http_503 | falha simulada)
 
 - **lead** › oi
 - **agente** [handoff] › Estou com uma instabilidade e não consigo continuar a conversa agora. Um consultor vai dar continuidade à sua conversa, e o que você me contou ficou registrado.
@@ -426,9 +428,9 @@
 - **lead** › oi
 - **agente** [text] › Olá! Sou a assistente virtual da AutoSeguro. Qual é o ano do modelo do seu carro?
 - **lead** › é um onix 2019, tenho 34 anos e moro no cep 30130-010
-- **agente** [question] › O que você quer cobrir? Só colisão, roubo e furto; também danos a terceiros e vidros; ou também carro reserva e assistência 24h?
+- **agente** [question] › Anotado: modelo 2019, 34 anos e CEP 30130-010. O que você quer cobrir? Só colisão, roubo e furto; também danos a terceiros e vidros; ou também carro reserva e assistência 24h?
 - **lead** › quero cobrir terceiros e vidros também
-- **agente** [text] › Anotado! Em que dia você quer que o seguro comece a valer?
+- **agente** [question] › Anotado: cobertura do plano Completo. Em que dia você quer que o seguro comece a valer?
 - **lead** › começando dia 01/11/2026
 - **agente** [quote] › Aqui está a cotação do plano Completo:
   • Mensalidade: R$ 241,38

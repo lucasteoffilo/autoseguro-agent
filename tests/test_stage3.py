@@ -216,3 +216,62 @@ def test_every_new_static_template_passes_the_strict_guardrail():
                  templates.media_request("video"), templates.failure_handoff_text(HandoffReason.MEDIA_UNREADABLE),
                  templates.failure_handoff_text(HandoffReason.CONVERSATION_STALLED), templates.failure_handoff_text(HandoffReason.OUT_OF_SCOPE)):
         assert check_reply(text, facts_used=(), base=BASE, lead_texts=[], author="template") == (), text
+
+
+# --- o eco do que o turno verificou ------------------------------------------------------------------------------------------------------------------------
+from autoseguro import questions  # noqa: E402
+
+
+def test_the_echo_is_built_from_verified_values_in_a_fixed_order_and_never_has_a_price():
+    assert questions.echo({"cep": "30130010", "idade": "34", "veiculo_ano": "2021"}) == "Anotado: modelo 2021, 34 anos e CEP 30130-010."
+    assert questions.echo({"data_inicio": "2026-11-01"}) == "Anotado: início em 01/11/2026 (domingo)."
+    assert questions.echo({"necessidade": "terceiros_vidros"}, "Completo") == "Anotado: cobertura do plano Completo."
+    assert questions.echo({"necessidade": "basica"}) == "" and questions.echo({}) == ""
+    assert "R$" not in questions.echo({"veiculo_ano": "2021", "idade": "34", "cep": "30130010", "necessidade": "completa", "data_inicio": "2026-11-01"}, "Premium")
+
+
+def test_a_turn_that_verifies_new_data_starts_with_the_ledgers_echo_and_the_models_text_is_not_used():
+    h = Harness()
+    h.run(GREET, "é um onix 2021, tenho 34 anos e moro no cep 30130-010")
+    text = h.agent[-1]["text"]
+    assert text.startswith("Anotado: modelo 2021, 34 anos e CEP 30130-010. ") and text.endswith(questions.ask("necessidade", BASE))
+    meta = h.meta(h.agent[-1])
+    assert meta["echo"] == "Anotado: modelo 2021, 34 anos e CEP 30130-010." and meta["reply_source"] == "template_echo"
+
+
+def test_the_echo_shows_only_what_was_verified_in_THIS_turn_and_a_confirmation_pending_value_is_not_echoed():
+    h = Harness()
+    h.run(GREET, "o carro é 2015 mas o modelo é 2016, tenho 34 anos e moro no cep 30130-010")
+    assert h.agent[-1]["text"] == "Anotado: 34 anos e CEP 30130-010. Só pra confirmar: modelo 2016?"
+    h.say("sim")
+    assert h.agent[-1]["text"].startswith("Anotado: modelo 2016. ") and "34 anos" not in h.agent[-1]["text"]
+
+
+def test_a_correction_is_echoed_with_the_new_value_and_a_repeated_value_is_not_echoed():
+    h = Harness()
+    h.run(GREET, "é um onix 2021")
+    assert h.agent[-1]["text"].startswith("Anotado: modelo 2021. ")
+    h.say("hmm não sei")
+    assert not h.agent[-1]["text"].startswith("Anotado"), "nada verificado de novo: sem eco"
+    h.say("na verdade é 2019")
+    assert h.agent[-1]["text"].startswith("Anotado: modelo 2019. ")
+
+
+def test_the_final_turn_that_completes_the_data_gets_the_quote_with_its_own_recap_not_an_echo():
+    from tests.test_orchestrator import HAPPY, ess
+    h = Harness(ess())
+    h.run(*HAPPY)
+    assert h.agent[-1]["kind"] == "quote" and not h.agent[-1]["text"].startswith("Anotado") and "echo" not in h.meta(h.agent[-1])
+
+
+def test_the_echo_comes_before_a_risk_templates_body_too():
+    h = Harness()
+    h.run(GREET, "tenho 34 anos, e o plano completo cobre vidros?")
+    text = h.agent[-1]["text"]
+    assert text.startswith("Anotado: 34 anos. ") and "vidros" in text and h.meta(h.agent[-1])["reply_source"] == "template_risk"
+
+
+def test_the_echo_is_not_used_when_the_model_text_is_not_the_one_delivered_anyway_and_never_duplicates_an_ack():
+    h = Harness()
+    h.run(GREET, "é um onix 2021")
+    assert h.agent[-1]["text"].count("Anotado") == 1

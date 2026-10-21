@@ -237,7 +237,7 @@ class Orchestrator:
         ledger = conv.ledger
         asked_slot, asked_kind = conv.asked or (None, None)
         offer, conv.pending_offer = conv.pending_offer, None
-        before = ledger.snapshot()
+        before, verified_before = ledger.snapshot(), dict(ledger.verified())
 
         # a resposta a uma confirmacao e resolvida SEM o modelo; ele so continua dono da intencao e dos outros slots
         skip: set[str] = set()
@@ -254,6 +254,7 @@ class Orchestrator:
         ledger.ingest(replace(out, slots=kept), text, asked_slot=asked_slot if asked_kind == "ask" else None)
 
         progress = ledger.snapshot() != before            # algum dado novo ou corrigido neste turno
+        newly = {s: v for s, v in ledger.verified().items() if verified_before.get(s) != v}   # o que este turno VERIFICOU (novo ou corrigido): vira o eco da resposta
         if progress:
             conv.stall = conv.media_asks = conv.off_topic = 0
         nq = self._next(conv)
@@ -305,7 +306,7 @@ class Orchestrator:
                 lead_in = reply.body + "\n\n" if intent in COVERAGE_INTENTS and reply.source == "template_risk" and reply.body else ""
                 self._quote(t, request=built, lead_in=lead_in)
                 return
-        self._converse(t, reply, nq, gres)
+        self._converse(t, reply, nq, gres, newly)
 
     # --- midia ----------------------------------------------------------------------------------------------------------------------------------
     def _media(self, t: _Turn, kind: str) -> None:
@@ -601,16 +602,26 @@ class Orchestrator:
             return _Next(slot, "ask", questions.ask(slot, self._facts))
         return None
 
-    def _converse(self, t: _Turn, reply: templates.Reply, nq: _Next | None, gres: GuardedResult) -> None:
+    def _echo(self, newly: Mapping[str, str]) -> str:
+        plano = None
+        if "necessidade" in newly:
+            pid = plano_for(newly["necessidade"], self._planos)
+            plano = next((p["nome"] for p in self._planos["planos"] if p["id"] == pid), None)
+        return questions.echo(newly, plano)
+
+    def _converse(self, t: _Turn, reply: templates.Reply, nq: _Next | None, gres: GuardedResult, newly: Mapping[str, str] = {}) -> None:  # noqa: B006
+        """A resposta de um turno que segue perguntando. Se o turno VERIFICOU dado novo, ela comeca com o eco montado do ledger ("Anotado: modelo 2021, 34 anos e CEP ….") e o texto do modelo
+        nao e usado: o reconhecimento dos dados e do produto, nunca do modelo (que podia ecoar um valor errado), e nunca duplica o "anotei" do modelo."""
         conv = t.conv
+        echo = self._echo(newly) if nq is not None else ""
         source, kind, text = reply.source, "text", reply.text
         if source == "llm":
             asked_ok = nq is not None and nq.kind == "ask" and nq.slot != "necessidade" and _asks(nq.slot, text)
             clean = not self._masker.mask(text).kinds and not residual_pii(text)       # o que o modelo escreve tambem passa pelo mascarador
             if nq is None:
                 text, source = templates.AFTER_QUOTE, "template_state"
-            elif not (asked_ok and clean):               # confirmacao e pergunta de necessidade sao do produto, nao do modelo (D6)
-                text, source = nq.text, "template_question"
+            elif echo or not (asked_ok and clean):       # eco, confirmacao e pergunta de necessidade sao do produto, nao do modelo (D6)
+                text, source = nq.text, ("template_echo" if echo else "template_question")
                 kind = "confirmation" if nq.kind == "confirm" else "question"
         elif source == "template_fallback":
             if nq is None:
@@ -618,6 +629,8 @@ class Orchestrator:
             kind = "fallback" if nq is None else ("confirmation" if nq.kind == "confirm" else "question")
         conv.asked = (nq.slot, nq.kind) if nq else None
         meta = self._meta(t, reply, gres, nq, source=source)
+        if echo:
+            text, meta["echo"] = f"{echo} {text}", echo
         if source == "template_fallback" and gres.output is not None and gres.violations:    # o guardrail barrou o texto do modelo: grava-o, para julgar falso positivo pelo texto
             meta.update(self._blocked_text(gres.output.reply))
         self._say(t, kind, text, meta=meta)

@@ -2,7 +2,7 @@
 
 Oito conversas que mostram o agente de ponta a ponta: cotação, queda da `/quote` com retry, recusa antecipada, objeção de preço, pedido de humano, dado ambíguo, tentativa de injeção e áudio. Cada uma roda **com o mock** (`make chat`, sem chave) e **com o LLM real** (`make chat ARGS="--llm real"`). O log final do README reaproveita estes cenários.
 
-Cada linha da coluna "O que digitar" é uma mensagem do lead; `·` separa as mensagens. Use uma data de início futura (os exemplos usam 01/11/2026; troque se já passou). No chat, `/novo` abre outra conversa (outro `trace_id`, mesmo banco) e `/sair` encerra.
+Cada linha da coluna "O que digitar" é uma mensagem do lead; `·` separa as mensagens. Quando um turno verifica dado novo, a resposta começa com `Anotado: …` (o eco montado do ledger, nunca do modelo) antes da pergunta. Use uma data de início futura (os exemplos usam 01/11/2026; troque se já passou). No chat, `/novo` abre outra conversa (outro `trace_id`, mesmo banco) e `/sair` encerra.
 
 ## Sessões e sementes da API
 
