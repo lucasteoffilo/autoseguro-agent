@@ -1,0 +1,11 @@
+{
+  "_what": "O que o MODELO REAL rotulou na rodada do docs/DEMO.md de 2026-10-21 (dots-studio/dots-3-note-preview:free, conversa trc_adb430d39582, cenario 4). So os rotulos de intencao, lidos do meta das mensagens do agente; o texto do reply do modelo nao foi gravado nesses turnos (o reply de risco e template). Nenhum dado pessoal: as mensagens do lead sao as do proprio DEMO.",
+  "provider": "openrouter",
+  "model": "dots-studio/dots-3-note-preview:free",
+  "recorded_on": "2026-10-21",
+  "scenario": 4,
+  "turns": [
+    {"lead": "achei caro", "intent": "price_objection"},
+    {"lead": "sim, pode mostrar", "intent": "price_objection", "note": "um SIM a oferta de outro plano, rotulado como objecao de preco: o handoff PRICE_OBJECTION dessa rodada"}
+  ]
+}

@@ -40,6 +40,7 @@ HANDOFF_BY_INTENT = {"wants_human": HandoffReason.HUMAN_REQUESTED, "claim": Hand
 NOT_IN_FACTS = "Não tenho essa informação por aqui, e prefiro não chutar."
 NOT_UNDERSTOOD = "Não consegui entender direito. Pode escrever de outro jeito?"
 PRICE_OFFER = "Entendo que o valor pesou. Posso te mostrar outro plano para você comparar?"
+OFFER_AGAIN = "Não entendi. Você quer ver outro plano para comparar? Responda só sim ou não."
 CLAIM = "Sinto muito pelo que aconteceu. Acionar o seguro (sinistro) não é comigo: eu só faço cotação."
 COMPLAINT = "Sinto muito pela experiência."
 CANCEL = "Entendi que você quer cancelar. Cancelamento não é comigo: eu só faço cotação."

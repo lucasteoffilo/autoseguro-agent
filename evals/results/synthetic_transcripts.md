@@ -330,7 +330,7 @@
 - **lead** › sei lá
 - **agente** [handoff] › Parece que não estou conseguindo avançar com as suas respostas por aqui. Um consultor vai dar continuidade à sua conversa, e o que você me contou ficou registrado.
 
-#### `handoff-price-objection-duas-vezes` — handoff:PRICE_OBJECTION
+#### `handoff-price-objection-oferta-recusada` — handoff:PRICE_OBJECTION
 
 - **lead** › oi
 - **agente** [text] › Olá! Sou a assistente virtual da AutoSeguro. Qual é o ano do modelo do seu carro?
@@ -348,7 +348,30 @@
   Se algum dado estiver errado, me avisa que eu refaço.
 - **lead** › achei caro
 - **agente** [text] › Entendo que o valor pesou. Posso te mostrar outro plano para você comparar?
-- **lead** › ainda tá caro
+- **lead** › não, obrigado
+- **agente** [handoff] › Entendo. Um consultor vai dar continuidade à sua conversa, e o que você me contou ficou registrado.
+
+#### `handoff-price-objection-oferta-sem-resposta` — handoff:PRICE_OBJECTION (oferta_sem_resposta)
+
+- **lead** › oi
+- **agente** [text] › Olá! Sou a assistente virtual da AutoSeguro. Qual é o ano do modelo do seu carro?
+- **lead** › é um onix 2019, tenho 34 anos e moro no cep 30130-010
+- **agente** [question] › O que você quer cobrir? Só colisão, roubo e furto; também danos a terceiros e vidros; ou também carro reserva e assistência 24h?
+- **lead** › quero cobrir terceiros e vidros também
+- **agente** [text] › Anotado! Em que dia você quer que o seguro comece a valer?
+- **lead** › começando dia 01/11/2026
+- **agente** [quote] › Aqui está a cotação do plano Completo:
+  • Mensalidade: R$ 241,38
+  • Franquia: R$ 3.000,00
+  • Cobre: colisão, roubo, furto, danos a terceiros e vidros
+  • Carência: roubo e furto só passam a valer 30 dias depois do início da vigência.
+  Dados usados: modelo 2019, 34 anos, CEP 30130-010, início em 01/11/2026 (domingo) e plano Completo.
+  Se algum dado estiver errado, me avisa que eu refaço.
+- **lead** › achei caro
+- **agente** [text] › Entendo que o valor pesou. Posso te mostrar outro plano para você comparar?
+- **lead** › talvez
+- **agente** [question] › Não entendi. Você quer ver outro plano para comparar? Responda só sim ou não.
+- **lead** › sei lá
 - **agente** [handoff] › Entendo. Um consultor vai dar continuidade à sua conversa, e o que você me contou ficou registrado.
 
 #### `handoff-price-objection-sem-plano-mais-barato` — handoff:PRICE_OBJECTION

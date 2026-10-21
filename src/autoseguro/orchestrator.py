@@ -107,6 +107,7 @@ class _Conv:
     probed: tuple[str, str] | None = None     # (idade, ano) para os quais a pre-checagem ja rodou: so roda de novo se o lead mudar um deles
     spoke: bool = False                       # o agente ja disse alguma coisa (a 1a mensagem leva a apresentacao)
     media_asks: int = 0                       # midias sem transcricao desde o ultimo dado novo
+    offer_repeats: int = 0                    # vezes em que a resposta a oferta de plano alternativo nao foi nem sim nem nao
     stall: int = 0                            # turnos seguidos em que a mesma pergunta ficou sem resposta util
     off_topic: int = 0                        # mensagens fora de cotacao desde o ultimo dado novo
     undelivered: list[tuple[HandoffSink, HandoffPackage]] = field(default_factory=list)
@@ -256,13 +257,9 @@ class Orchestrator:
             conv.stall = conv.media_asks = conv.off_topic = 0
         nq = self._next(conv)
         intent = out.intent
-        if offer and nq is None and intent not in templates.HANDOFF_BY_INTENT and intent != "price_objection":   # resposta a oferta de plano alternativo
-            if is_affirmative(text):
-                self._quote(t, plano_id=offer, alternative=True)
-                return
-            if is_negative(text):
-                self._reply_action(t, templates.price_handoff(self._next_step), gres)
-                return
+        if offer and nq is None and not progress and intent not in templates.HANDOFF_BY_INTENT:   # resposta a oferta: o LEXICO decide, nao o rotulo do modelo
+            self._answer_offer(t, offer, text, gres)
+            return
 
         if intent == "out_of_scope":
             conv.off_topic += 1
@@ -283,7 +280,7 @@ class Orchestrator:
             return
         if reply.action == "offer_alternative":
             conv.objections += 1
-            conv.pending_offer = self._alternative(conv)
+            conv.pending_offer, conv.offer_repeats = self._alternative(conv), 0
             self._say(t, "text", reply.text, meta=self._meta(t, reply, gres, nq))
             conv.asked = ("oferta", "offer")
             return
@@ -359,6 +356,27 @@ class Orchestrator:
         else:
             self._fail(t, HandoffReason.QUOTE_UNAVAILABLE, FailedComponent.QUOTE_API, detail=f"precheck:{outcome.reason}:{outcome.last_error}")
         return True
+
+    # --- oferta de plano alternativo -------------------------------------------------------------------------------------------------------------
+    def _answer_offer(self, t: _Turn, offer: str, text: str, gres: GuardedResult) -> None:
+        """A resposta a "Posso te mostrar outro plano?" e decidida pelo LEXICO (`anchoring.is_affirmative` e `is_negative`), nunca pelo rotulo do modelo: com o modelo real, "sim, pode
+        mostrar" veio rotulado `price_objection` (rodada de 2026-10-21) e a oferta virava handoff. Sim cota o alternativo; nao e PRICE_OBJECTION; nem um nem outro repete a pergunta UMA vez,
+        por template, e a segunda ambiguidade vai a um humano. (As intencoes que ja sao handoff por si, como pedir uma pessoa, nem chegam aqui.)"""
+        conv = t.conv
+        if is_affirmative(text):
+            conv.offer_repeats = 0
+            self._quote(t, plano_id=offer, alternative=True)
+        elif is_negative(text):
+            conv.offer_repeats = 0
+            self._reply_action(t, templates.price_handoff(self._next_step), gres)
+        else:
+            conv.offer_repeats += 1
+            if conv.offer_repeats >= 2:
+                self._handoff(t, HandoffReason.PRICE_OBJECTION, templates.price_handoff(self._next_step).text, detail="oferta_sem_resposta",
+                              meta={**t.llm, "reply_source": "template_risk", "intent": gres.output.intent if gres.output else None})
+                return
+            conv.pending_offer, conv.asked = offer, ("oferta", "offer")
+            self._say(t, "question", templates.OFFER_AGAIN, meta={**t.llm, "reply_source": "template_risk", "intent": gres.output.intent if gres.output else None, "asked": ["oferta", "offer"]})
 
     # --- LLM ------------------------------------------------------------------------------------------------------------------------------------
     def _ask_llm(self, t: _Turn, text: str) -> GuardedResult | None:

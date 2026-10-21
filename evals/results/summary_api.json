@@ -2,54 +2,54 @@
   "backend": "API HTTP http://localhost:8100 (relogio do servidor, UTC)",
   "checks": {
     "C1": {
-      "denominator": 3933,
+      "denominator": 3935,
       "failures": 0,
       "info": {
-        "cotações recalculadas no serviço": 1764,
-        "mensagens com R$": 1764,
-        "valores em reais conferidos": 3933
+        "cotações recalculadas no serviço": 1765,
+        "mensagens com R$": 1765,
+        "valores em reais conferidos": 3935
       },
       "notes": 0,
-      "numerator": 3933,
+      "numerator": 3935,
       "title": "Nenhum preço inventado"
     },
     "C2": {
-      "denominator": 34,
+      "denominator": 35,
       "failures": 0,
       "info": {
-        "cenários de handoff": 17,
+        "cenários de handoff": 18,
         "motivos cobertos": "12/12"
       },
       "notes": 0,
-      "numerator": 34,
+      "numerator": 35,
       "title": "Motivo de handoff correto nos sintéticos"
     },
     "C3": {
-      "denominator": 2521,
+      "denominator": 2522,
       "failures": 0,
       "info": {
-        "cotações ditas ao lead": 1764,
+        "cotações ditas ao lead": 1765,
         "perfil recusável que terminou sem recusa (handoff ou aberto)": 2,
         "recusas ditas ao lead": 757
       },
       "notes": 2,
-      "numerator": 2521,
+      "numerator": 2522,
       "title": "Recusas e cotações batem com a API"
     },
     "C4": {
-      "denominator": 20078,
+      "denominator": 20085,
       "failures": 0,
       "info": {},
       "notes": 0,
-      "numerator": 20078,
+      "numerator": 20085,
       "title": "Uma mensagem terminal por turno"
     },
     "C5": {
-      "denominator": 2534,
+      "denominator": 2535,
       "failures": 0,
       "info": {},
       "notes": 0,
-      "numerator": 2534,
+      "numerator": 2535,
       "title": "Nenhuma PII gravada"
     }
   },
@@ -65,7 +65,7 @@
     "lead_messages": 16470,
     "reached_quote": 1749,
     "scripted_answers": 3498,
-    "seconds": 25.836446791996423,
+    "seconds": 37.00718329200026,
     "with_media": 1420,
     "with_pii": 2500
   },
@@ -81,7 +81,7 @@
       "handoff:HUMAN_REQUESTED": 2,
       "handoff:MEDIA_UNREADABLE": 1,
       "handoff:OUT_OF_SCOPE": 1,
-      "handoff:PRICE_OBJECTION": 2,
+      "handoff:PRICE_OBJECTION": 3,
       "handoff:QUOTE_UNAVAILABLE": 2,
       "handoff:READY_TO_CLOSE": 1,
       "handoff:SAFETY_GUARD": 2,
@@ -89,7 +89,7 @@
       "quoted": 10,
       "refused": 6
     },
-    "scenarios": 34
+    "scenarios": 35
   },
   "today": "2026-10-21"
 }
