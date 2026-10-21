@@ -197,3 +197,13 @@ def test_without_git_installed_the_tree_check_says_so_instead_of_crashing(tmp_pa
 
     monkeypatch.setattr(D.subprocess, "run", no_git)
     assert D.git_tree(tmp_path) == ["git ausente: a arvore limpa nao pode ser conferida"]
+
+
+@needs_git
+def test_the_env_example_is_tracked_on_purpose_but_a_real_env_variant_is_not_allowed(tmp_path):
+    repo = make_repo(tmp_path)
+    (repo / ".env.example").write_text("LLM_API_KEY=\n", encoding="utf-8")
+    (repo / ".env.local").write_text("LLM_API_KEY=x\n", encoding="utf-8")
+    subprocess.run(["git", "add", "-f", ".env.example", ".env.local"], cwd=repo, check=True, capture_output=True)
+    subprocess.run(["git", "commit", "-qm", "env"], cwd=repo, check=True, capture_output=True)
+    assert D.git_tree(repo) == ["versionado e nao deveria: .env.local"]

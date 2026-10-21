@@ -29,7 +29,7 @@ from tools.export_ai_logs import scan_folder  # noqa: E402
 LOG = "logs/execucao-final/cenario-1.md"
 LOG_INDEX = "logs/execucao-final/index.md"
 MARKERS = re.compile(r"_\(planejad|_\(provis|\bplanejado\b|\bprovis[óo]rio|\bprovis[óo]rios\b|\bTODO\b|\bFIXME\b")
-FORBIDDEN_TRACKED = re.compile(r"(^|/)(\.env(\..*)?|var/.*|.*\.(db|sqlite3?|parquet|pem|key))$")
+FORBIDDEN_TRACKED = re.compile(r"(^|/)(\.env(\.(?!example$).*)?|var/.*|.*\.(db|sqlite3?|parquet|pem|key))$")      # o `.env.example` e versionado de proposito
 Result = list[str]      # as falhas; vazio = passou
 
 
