@@ -79,6 +79,8 @@ O dataset do desafio **não está neste repo** (higiene: nenhuma linha dele entr
 
 `make smoke-llm-dry` roda o `smoke-llm` com um LLM de mentira (sem chave, sem rede).
 
+**Entrega.** `make delivery-check` confere, num clone limpo, o mínimo que um avaliador abre primeiro (README coerente e com o "Como rodar" em três comandos, o log da execução com o modelo real, `ai-logs/` varridos, árvore limpa) e depois roda `make test`; `tools/delivery_check.py` diz o que falhou e onde.
+
 **Logs de IA** (`ai-logs/`). `make ai-logs-list` lista as sessões do Claude Code (id, início, fim, mensagens, tamanho, primeiro pedido); `make ai-logs IDS="id1 id2"` copia **só** esses ids, redige o caminho de home, o nome de usuário do sistema e todo e-mail, e refaz o `INDEX.md` (o que foi redigido, o que foi excluído e por quê). Segredo ou PII que sobrar (chaves, Bearer, CPF, telefone, placa) **para a cópia** daquela sessão com exit 3, dizendo o tipo e a linha, nunca o trecho; `--redact "texto"` redige um literal. A mesma varredura roda como teste sobre `ai-logs/**` (`tests/test_ai_logs.py`).
 
 **Antes de gastar a cota, `make llm-ping`**: uma única requisição real que confere a autenticação, se o OpenRouter aceita o pedido como montado (`json_schema` + `require_parameters`), se o modelo devolve saída válida e a latência dessa amostra; confirma que a chave está setada sem mostrar valor, prefixo nem tamanho.

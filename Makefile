@@ -53,6 +53,10 @@ export-log: ## exporta o log de UMA conversa em Markdown (transcricao, decisoes,
 export-logs: ## exporta TODAS as conversas do banco: um .md por conversa e um index.md. DB=var/autoseguro.db OUT=var/logs
 	$(BIN)/python tools/export_log.py --db $(or $(DB),var/autoseguro.db) --trace all --out $(or $(OUT),var/logs)
 
+delivery-check: ## o minimo da entrega num clone limpo: README coerente, log da execucao real, ai-logs/ varridos, arvore limpa; depois roda make test
+	$(BIN)/python tools/delivery_check.py
+	$(MAKE) test
+
 ai-logs-list: ## lista as sessoes do Claude Code (id, inicio, fim, mensagens, tamanho, primeiro pedido) para voce escolher quais entram em ai-logs/
 	$(BIN)/python tools/export_ai_logs.py --list
 
