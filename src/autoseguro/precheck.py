@@ -5,8 +5,9 @@ servico: a idade primeiro, o carro depois, a primeira faixa que casa decide, e "
 desta funcao: uma previsao de recusa dispara uma chamada de confirmacao a `/quote` (so idade e ano, o plano mais barato, sem CEP nem data), e quem fala e a API.
 Se a API aceitar, a divergencia e registrada e o preco parcial nunca e exibido; se a API estiver fora, o caso vai a um humano com este veredito no pacote.
 
-A pre-checagem duplica semantica do servico. Por isso `tests/test_precheck_contract.py` a compara com a API nas bordas de cada faixa (derivadas do `/planos`) e numa
-amostra aleatoria com semente registrada: "a pre-checagem recusa e a API aceita" reprova o teste. Se um dia deixar de compensar, ela sai sem afetar o resto.
+A pre-checagem duplica semantica do servico. Por isso o CONTRATO a compara com o servico nas bordas de cada faixa (derivadas do `/planos`) e numa amostra aleatoria com semente
+registrada: `tests/test_precheck.py` contra a logica vendorizada do servico (sem rede, em 4 datas) e `tests/integration/test_precheck_contract.py` contra a API HTTP real
+(`make test-integration`). "A pre-checagem recusa e a API aceita" reprova o teste. Se um dia deixar de compensar, ela sai sem afetar o resto.
 """
 from __future__ import annotations
 
