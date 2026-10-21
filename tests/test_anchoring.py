@@ -239,7 +239,7 @@ def test_the_question_for_a_missing_slot_is_the_product_question_and_asks_for_th
 
 def test_the_recap_for_the_quote_message_shows_the_inputs_with_modelo():
     v = {"veiculo_ano": "2016", "idade": "42", "cep": "01310100", "data_inicio": "2026-11-01"}
-    assert questions.recap(v, "Completo") == "Dados usados: modelo 2016, 42 anos, CEP 01310-100, 01/11/2026 (domingo) e plano Completo."
+    assert questions.recap(v, "Completo") == "Dados usados: modelo 2016, 42 anos, CEP 01310-100, início em 01/11/2026 (domingo) e plano Completo."
 
 
 # --- REPLAY das 29 saidas reais do smoke -----------------------------------------------------------------------------------------------------

@@ -75,6 +75,12 @@ class SlotState:
     def quotable(self) -> bool:
         return self.status in (Status.ANCHORED, Status.CONFIRMED)
 
+    @property
+    def needs_confirmation(self) -> bool:
+        """Ha algo a MOSTRAR ao lead (um valor proposto, candidatos ou um dado derivado). Pendente sem isso e uma extracao que o sistema ignorou
+        (o modelo inventou, ou devolveu um marcador como '?'): o dado continua faltando e a pergunta e a ordinaria, sem turno extra."""
+        return not self.quotable and (self.proposed is not None or bool(self.candidates) or self.reason is Reason.DERIVED)
+
 
 # --- leitura do texto do lead (sem modelo) --------------------------------------------------------------------------------------------------
 _CEP_RX = re.compile(r"(?<!\d)(\d{2})\.?(\d{3})-?(\d{3})(?!\d)")
@@ -99,6 +105,16 @@ _TIER_WORDS = (
 )
 _YES_RX = re.compile(r"^\s*(sim|isso|isso mesmo|isso ai|correto|certo|exato|exatamente|confirmo|confirmado|pode ser|ss|s|uhum|aham|positivo)\b")
 _NO_RX = re.compile(r"^\s*(nao|negativo|errado|nada disso|n)\s*([,.!]|$)")
+
+
+def is_affirmative(text: str) -> bool:
+    """"sim", "isso", "confirmo"... (lexico fechado, sem hesitacao). Usado nas respostas a uma pergunta de confirmacao ou de oferta."""
+    r = read_text(text)
+    return bool(_YES_RX.match(r.plain)) and not r.hedge
+
+
+def is_negative(text: str) -> bool:
+    return bool(_NO_RX.match(read_text(text).plain))
 
 
 def _blank(s: str, span: tuple[int, int]) -> str:
@@ -389,6 +405,11 @@ class SlotLedger:
     def pending(self) -> tuple[SlotState, ...]:
         return tuple(st for st in self._states.values() if not st.quotable)
 
+    def snapshot(self) -> dict[str, dict[str, Any]]:
+        """O estado de cada slot, serializavel (JSON), para persistir. So o que o proprio lead escreveu (texto ja mascarado) e o que foi decidido sobre isso."""
+        return {s: {"status": st.status.value, "value": st.value, "evidence": st.evidence, "reason": st.reason.value if st.reason else None,
+                    "candidates": list(st.candidates), "proposed": st.proposed, "note": st.note} for s, st in self._states.items()}
+
     def question(self, slot: str, base: FactBase | None = None) -> str:
         """A pergunta de confirmacao (template) para um slot pendente, ou a pergunta do produto se ele ainda nao existe."""
         st = self._states.get(slot)
@@ -400,15 +421,19 @@ class SlotLedger:
     def verified(self) -> VerifiedSlots:
         return VerifiedSlots(_MINT, {s: st.value for s, st in self._states.items() if st.quotable and st.value is not None})
 
-    def quote_request(self, planos: Mapping[str, Any], *, today: date) -> QuoteRequest | NotQuotable:
-        """O UNICO caminho para um `QuoteRequest`. Cada campo vem de um slot verificado; `plano_id` sai da necessidade verificada."""
+    def quote_request(self, planos: Mapping[str, Any], *, today: date, plano_id: str | None = None) -> QuoteRequest | NotQuotable:
+        """O UNICO caminho para um `QuoteRequest`. Cada campo vem de um slot verificado; `plano_id` sai da necessidade verificada, ou e o plano ALTERNATIVO
+        que o orquestrador pede (objecao de preco: uma alternativa real via API), que precisa existir no /planos."""
         v = self.verified()
         pend = self.pending()
         pending_slots = {st.slot for st in pend}
         missing = tuple(s for s in SLOT_NAMES if s not in v and s not in pending_slots)
         if missing or pend:
             return NotQuotable(missing, pend)
-        plano = plano_for(v["necessidade"], planos)
+        known = [p["id"] for p in planos["planos"]]
+        plano = plano_id if plano_id is not None else plano_for(v["necessidade"], planos)
+        if plano is not None and plano not in known:
+            return NotQuotable((), (), (SlotIssue("plano_id", "plano_desconhecido"),))
         if plano is None:
             return NotQuotable((), (), (SlotIssue("necessidade", "sem_plano_correspondente"),))
         built = build_quote_request(
@@ -423,8 +448,8 @@ class QuoteGate:
     def __init__(self, client: QuoteClient, planos: Mapping[str, Any]) -> None:
         self._client, self._planos = client, planos
 
-    def quote(self, ledger: SlotLedger, *, today: date, **client_kwargs: Any) -> QuoteOutcome | NotQuotable:
-        built = ledger.quote_request(self._planos, today=today)
+    def quote(self, ledger: SlotLedger, *, today: date, plano_id: str | None = None, **client_kwargs: Any) -> QuoteOutcome | NotQuotable:
+        built = ledger.quote_request(self._planos, today=today, plano_id=plano_id)
         if isinstance(built, NotQuotable):
             return built
         return self._client.quote(built, **client_kwargs)

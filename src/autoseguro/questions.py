@@ -77,7 +77,7 @@ def confirm(slot: str, *, proposed: str | None = None, candidates: Sequence[str]
 def recap(verified: Mapping[str, str], plano_nome: str | None = None) -> str:
     """Os dados que entram na cotacao, para a mensagem de cotacao mostrar ao lead (rede VISIVEL: se algo estiver errado, ele ve)."""
     order = ("veiculo_ano", "idade", "cep", "data_inicio")
-    parts = [fmt_value(s, verified[s]) for s in order if s in verified]
+    parts = [("início em " if s == "data_inicio" else "") + fmt_value(s, verified[s]) for s in order if s in verified]
     if plano_nome:
         parts.append(f"plano {plano_nome}")
     return "Dados usados: " + _join(parts) + "." if parts else ""
