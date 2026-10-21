@@ -39,7 +39,7 @@
 | Critério de latência | **Um só: p95 do turno ≤ 5s sem cotação e ≤ 12s com cotação.** O "um instante" aos 2,5s e o teto de 20s são mecanismos, não critérios. O limite por chamada de LLM é **derivado** do critério (seção 5.1) | Um número solto vira discussão; um derivado vira consequência |
 | Cliente de cotação | **Política B**: timeout 10s, retry só em 5xx/429/conexão/corpo inválido, no máximo 4 chamadas, **no máximo uma em voo**, backoff com jitter, orçamento de 15s (e nunca além do prazo restante do turno) | Menor carga e menor taxa de falha entre as opções simples (seção 4) |
 | Hedging | **Descartado.** Não existe parâmetro de hedging no código; o teste que o impede é de comportamento (uma chamada em voo), com controle negativo no cliente | Corta o p95 de 8s para 2,5s, mas custa +14% de chamadas (+35% degradado) |
-| Texto ao lead | **O LLM redige os turnos de conversa neutros** (saudação, próxima pergunta, confirmação) **na mesma chamada que extrai os slots**: `{slots, intent, facts_used, reply}`, sem chamada extra. **`reply` de no máximo ~40 palavras** (WhatsApp). **Template fixo em cotação, handoff e nas intenções de risco** (dúvida de carência ou cobertura, objeção de preço, sinistro, pedido de humano), montado dos fatos; do LLM, nesses turnos, vale só a intenção (README, D6) | O desafio pede conversa, não bot de formulário |
+| Texto ao lead | **O LLM redige os turnos de conversa neutros** (saudação, próxima pergunta, confirmação) **na mesma chamada que extrai os slots**: `{slots, intent, facts_used, reply}`, sem chamada extra. **`reply` de no máximo ~40 palavras** (WhatsApp). **Template fixo em cotação, handoff e nas intenções de risco** (dúvida de carência ou cobertura, objeção de preço, sinistro, pedido de humano, reclamação, cancelamento, fechar), montado dos fatos; **o LLM não redige nada que leve a um handoff**; do LLM, nesses turnos, vale só a intenção (README, D6) | O desafio pede conversa, não bot de formulário |
 | Base de fatos | O `reply` **só pode afirmar o que está numa base de fatos derivada do `/planos`**. O LLM declara em `facts_used` em quais se apoiou; **todo número do `reply` tem que estar nesses fatos ou ecoar um dado que o lead escreveu**. Reprovou: template | Regex não pega fato errado; restringir o material pega a classe de erro que importa (seção 6) |
 | Fast-path por regex | **Nasce desligado.** Só valeria para resposta direta ao slot perguntado com valor inequívoco; o `smoke-llm` mede a divergência regex vs LLM e, se divergir, **sai** | Risco de extrair o slot errado em silêncio; ganho pequeno (seção 5.1) |
 | Falha do LLM antes da cotação | `SAFETY_GUARD` com componente `llm`; falha da `/quote` ou teto estourado na cotação: `QUOTE_UNAVAILABLE` com componente `quote_api`. **Motivo e componente sempre logados** | A causa raiz decide o código |
@@ -58,7 +58,7 @@
 | Proteções | **O gate de PII e o guardrail ficam em `GuardedLLM`, acima de qualquer adaptador**; a fábrica só devolve LLM embrulhado nele. Teste parametrizado nos dois adaptadores, com controle negativo | Trocar de provedor não pode contornar nenhum dos dois |
 | Chave | A chave do OpenRouter **nunca** passa pelo `ClaudeLLM` (parâmetros da Anthropic que o OpenRouter não garante), a da Anthropic não vai a outro provedor, e nenhuma aparece em log, erro, relatório nem saída (`redact` + teste) | Vazamento de chave |
 | Saída estruturada | `response_format` `json_schema` só se o modelo suportar (conferido na documentação, seção 5.5), com `require_parameters`. **O provedor não é confiado:** valida-se com o schema local, e saída inválida cai no template ou escala | Provedor e modelo mudam; o contrato é nosso |
-| Modelo por passo | **A escolher no `smoke-llm`**, pelo critério de sempre: 0 extrações erradas em silêncio, 100% de saída válida, p95 projetado do turno (seção 5.3) | Depende de números que ainda não existem |
+| Modelo por passo | **A escolher no `smoke-llm`**, pelo critério de sempre, com o gate de preço no lugar do erro cru (README, D7): 0 slots errados chegariam à `/quote`, 100% de saída válida, p95 projetado do turno (seção 5.3) | Depende de números que ainda não existem |
 | Entrega | **Etapa 8 com critérios de aceite verificáveis**; sem ela fechada, o trabalho não está pronto (seção 12) | A avaliação inclui README, `ai-logs/` e o log da execução |
 
 ## 4. Política de cotação
@@ -109,7 +109,7 @@ Degradado: rápido 10,4s (handoff 6,3%), médio 12,4s, lento 16,9s. **O p95 de u
 
 1. **Teto estourado com a `/quote` em andamento, ou sem prazo restante para ela** → mensagem honesta ("não consegui gerar sua cotação agora por uma instabilidade no nosso sistema; não vou te passar valor sem a confirmação dele") **e** handoff `QUOTE_UNAVAILABLE`, componente `quote_api`. **Nunca silêncio.**
 2. **Falha do LLM antes de a cotação ser pedida** (6s de timeout, 1 retry) → mesma honestidade na mensagem, mas o motivo é **`SAFETY_GUARD`, componente `llm`** (decisão: a causa raiz decide o código; **os dois são logados**).
-3. **"Um instante"** aos 2,5s desde a chegada da mensagem (mecanismo que garante silêncio ≤ 3s). Em turno de cotação, o `reply` do LLM pode servir de confirmação ("vou calcular agora"), se passar pelo guardrail.
+3. **"Um instante"** aos 2,5s desde a chegada da mensagem (mecanismo que garante silêncio ≤ 3s). **Na 2b ele existe só durante a `/quote`** (é o cliente da cotação que o dispara, descontando o que o turno já gastou): um turno sem cotação termina quando o LLM responde, e o critério de latência (p95 ≤ 5s) é o que o protege. O texto é **template** (`HOLD_TEXT`), não o `reply` do LLM: o que era "pode servir" virou "não precisa".
 4. **Cobertura por teste:** o cliente da `/quote` devolve **sempre** um resultado terminal dentro do prazo recebido (1.500 roteiros aleatórios + matriz roteirizada); o orquestrador (2b) repete a propriedade no nível do turno: exatamente uma mensagem terminal visível em até 20s.
 
 ### 5.3 Modelo por passo (a escolher no smoke) e custo
@@ -148,7 +148,8 @@ Tokens por conversa (hit 95%): 5 chamadas = 13,2K de entrada (10,5K do cache) + 
 **Garantias:** cada mensagem é `hand-written`; o detector de PII roda em **todo** payload (sistema e usuário) e **aborta antes da chamada**; o script não acessa o dataset; **a chave nunca é impressa, gravada nem repetida em erro** (`redact` em toda saída, coberto por `tests/test_key_safety.py`); o relatório, que cita provedor, modelo e modelo servido, vai para `var/smoke/` (ignorado pelo git).
 
 **Mede:** latência por chamada e o **p95 do turno projetado a partir dela** (contra 5s e 12s); tokens/s e `usage`; saída estruturada válida; extração separando **erro silencioso** de omissão; aprovação do guardrail e as violações; **tamanho do `reply` (alvo 40 palavras)**; **divergência regex vs LLM** (decide o fast-path); custo por chamada.
-**Passa se:** 0 extrações erradas em silêncio; saída válida em 100% **das chamadas que o provedor entregou** e 0 bloqueios do provedor em mensagens benignas (seção 5.6); p95 projetado do turno dentro do critério; guardrail aprova ≥ 80% **dos replies redigidos pelo LLM** (as intenções de risco saem por template); **intenção de risco reconhecida em 100% das mensagens de risco**; ≥ 90% dos replies do LLM com ≤ 40 palavras e nenhum acima de 50; nenhum termo proibido **no texto entregue ao lead**.
+**Passa se:** **0 slots errados chegariam à `/quote` sem confirmação** (a ancoragem reaplicada às extrações; **o erro silencioso do modelo cru é reportado e não é gate**, README D7); saída válida em 100% **das chamadas que o provedor entregou** e 0 bloqueios do provedor em mensagens benignas (seção 5.6); p95 projetado do turno dentro do critério; guardrail aprova ≥ 80% **dos replies redigidos pelo LLM** (as intenções de risco saem por template); **intenção de risco reconhecida em 100% das mensagens de risco**; ≥ 90% dos replies do LLM com ≤ 40 palavras e nenhum acima de 50; nenhum termo proibido **no texto entregue ao lead**.
+**Três números no relatório (README D7):** (1) slots errados que chegariam à `/quote` sem confirmação, o **gate duro**, tem que dar 0; (2) confirmações pedidas por mensagem, o **custo em turnos**; (3) o erro silencioso do modelo cru, reportado e **não gate**. `tools/smoke_rescore.py` os recalcula sobre um relatório gravado, sem provedor. Nos dois smokes reais: (3) = 2 e 1; (1) = 0 e 0; (2) = 8/18 e 7/17.
 **O que ele não faz:** 15 mensagens **não certificam taxas** (é um alarme contra problema grosseiro, não um benchmark), e **regex não lê sentido**: a explicação de carência (`m10`), a objeção (`m11`) e a injeção (`m14`) precisam ser lidas a olho no relatório.
 
 ### 5.5 OpenRouter: o que foi conferido na documentação (2026-10-20) e o que não foi
@@ -183,15 +184,17 @@ A 1328 de entrada, medida por esse modelo, está abaixo dos ~2400 do modelo de c
 
 Por que separar: contar o filtro como "formato inválido" culpa o modelo pelo que foi do provedor e esconderia um problema real de formato; mas bloquear um lead legítimo é problema de produto, então a mensagem **benigna** continua em zero. A mensagem adversarial que **foi respondida** segue a mesma regra de formato das demais (afrouxar o formato para ela seria afrouxar o critério). Implementação: `SmokeMessage.adversarial` (só o m14) e `outcome_class` em `tools/smoke_llm.py`.
 
-**Comportamento do turno — a implementar na 2b:**
+**Comportamento do turno — implementado na 2b (`orchestrator.py`):**
 1. **1 retry.** A chamada é repetida uma vez, dentro do limite por chamada (6 s) e do teto de 20 s do turno (`budgets.LLM_MAX_ATTEMPTS = 2`).
 2. **Se filtrar de novo:** o turno **não extrai nada** (o `SlotLedger` não é tocado) e o lead recebe a **pergunta pendente por template** (`questions.ask` ou `questions.confirm`): nunca silêncio e nunca texto do modelo. Registro: `reply_source=template_fallback`, `llm_error=content_filter`, `attempt=2`.
 3. **No 2º turno seguido filtrado:** `SAFETY_GUARD` com `failed_component=llm`, detalhe `content_filter` e o texto de handoff genérico (D2). Um turno bem-sucedido zera o contador.
 
+**Extensão (decisão da 2b, a mesma regra):** saída inútil do modelo que o provedor entregou (fora do schema, truncada, vazia) também não extrai nada, vira a pergunta pendente por template e conta no mesmo contador; no 2º turno seguido é `SAFETY_GUARD` componente `llm`. Falha de **serviço** (timeout, 5xx, 429 depois do backoff) tem 1 retry e vai direto a `SAFETY_GUARD` componente `llm`; erro de protocolo, cota esgotada e disjuntor aberto, que não melhoram ao repetir, vão sem retry.
+
 Por que não `SAFETY_GUARD` de cara: a repetição 1 mostra que a mesma mensagem passa, e um handoff imediato gastaria uma pessoa num bloqueio intermitente. Por que não ignorar: o lead não pode ficar sem resposta.
 **Registro (proposta, não implementada):** o adaptador descarta o conteúdo quando vem `content_filter`, então hoje não dá para auditar o que foi bloqueado. Guardar `native_finish_reason` e se veio conteúdo, mascarado.
 
-**Testes de aceitação da 2b:** (i) filtrado na 1ª tentativa e ok no retry → turno normal, 1 retry registrado; (ii) filtrado nas duas → resposta é a pergunta pendente por template, nenhum slot alterado, sem `SAFETY_GUARD`; (iii) 2º turno seguido filtrado → `SAFETY_GUARD` com componente `llm`; (iv) um turno bom entre dois filtrados → sem `SAFETY_GUARD`; (v) o filtro não conta no disjuntor nem como erro de protocolo; (vi) nenhuma conversa fica sem resposta visível dentro do teto de 20 s.
+**Testes de aceitação da 2b** (feitos: os itens i a iv e o vi em `tests/test_orchestrator.py::test_cf_*`, o v em `tests/test_content_filter_spec.py`)**:** (i) filtrado na 1ª tentativa e ok no retry → turno normal, 1 retry registrado; (ii) filtrado nas duas → resposta é a pergunta pendente por template, nenhum slot alterado, sem `SAFETY_GUARD`; (iii) 2º turno seguido filtrado → `SAFETY_GUARD` com componente `llm`; (iv) um turno bom entre dois filtrados → sem `SAFETY_GUARD`; (v) o filtro não conta no disjuntor nem como erro de protocolo; (vi) nenhuma conversa fica sem resposta visível dentro do teto de 20 s.
 
 ## 6. Guardrail do `reply` e base de fatos
 
@@ -248,10 +251,12 @@ Motivos (enum fixo e versionado em `HandoffReason`; um teste garante que esta ta
 
 A cada mensagem o LLM devolve `{slots, intent, facts_used, reply}`. **Quem decide o próximo passo é o orquestrador, pelo estado, e não o LLM.** Ordem: **ano do veículo → idade → (pré-checagem) → CEP → necessidade → data de início → cotar → apresentar**.
 
-- **Conversa neutra (LLM, com guardrail R1–R7 estrito):** saudação, próxima pergunta, confirmação. **Template:** cotação, recusa, handoff, o fallback de cada pergunta e **as intenções de risco** (carência e cobertura, objeção de preço, sinistro, pedido de humano). Objeção de preço: oferece **uma** alternativa real; na 2ª hesitação, `PRICE_OBJECTION`. Nunca promete desconto.
+- **Conversa neutra (LLM, com guardrail R1–R7 estrito):** saudação, próxima pergunta, confirmação. **Template:** cotação, recusa, handoff, o fallback de cada pergunta e **as intenções de risco** (carência e cobertura, objeção de preço, sinistro, pedido de humano, reclamação, cancelamento, fechar). Objeção de preço: oferece **uma** alternativa real; na 2ª hesitação, `PRICE_OBJECTION`. Nunca promete desconto.
 - **Ancoragem (invariante):** nenhum slot chega à `/quote` sem estar **ancorado** no texto do lead (literal, único, sem hesitação) ou **confirmado** por ele. O LLM só propõe; `anchoring.py` decide sem modelo. Valor fora do texto, mais de um candidato, hesitação, incerteza do modelo e dado **derivado** (ano de nascimento, data relativa: **sempre** confirma, sem checar faixa de preço) ficam pendentes, e a confirmação é **template**. Ano de nascimento nunca vira idade. Ver README, D5.
 - **Pergunta do ano:** o produto pede o **ano do modelo** (no documento `2015/2016`, vale o segundo); a confirmação mostra `modelo 2016`.
-- **Necessidade → plano.** Três opções em linguagem simples, derivadas das coberturas do `/planos`. Mapeia o menor plano que cobre o pedido. Ambíguo: pergunta de novo uma vez; depois `DATA_AMBIGUOUS`.
+- **Necessidade → plano.** Três opções em linguagem simples, derivadas das coberturas do `/planos` (fato `necessidades`). **A pergunta de necessidade e toda confirmação são texto do produto**, não do LLM (a causa comum das violações R2/R7 do smoke era o modelo redigindo essa pergunta). Mapeia o menor plano que cobre o pedido. Ambíguo: pergunta de novo uma vez; depois `DATA_AMBIGUOUS` (hoje: 2 confirmações sem resposta útil).
+- **Objeção de preço, em dois passos.** 1ª vez, com cotação e com plano mais barato: `PRICE_OFFER` (uma pergunta); se o lead aceita, o plano **logo abaixo** é cotado de novo na API (`kind='alternative'`). 2ª objeção, recusa da oferta ou nenhum plano mais barato: `PRICE_OBJECTION`. Objeção **antes** de haver cotação não é objeção a nada: o agente diz que ainda não cotou e segue perguntando. Nunca promete desconto.
+- **Depois da cotação.** Dado corrigido pelo lead → nova cotação com o valor novo (a anterior fica registrada). Mesmos dados → nenhuma chamada nova (`AFTER_QUOTE`). Um slot já verificado não é rebaixado porque o modelo o repetiu como incerto: só um valor novo escrito pelo lead o substitui. `out_of_scope` é template (`OFF_TOPIC`), nunca texto do modelo.
 - **Pré-checagem.** Só quando prevê recusa o agente faz uma chamada de confirmação (idade e ano). Se a API disser 200, a divergência é registrada e o preço parcial **nunca** é exibido. Nunca diz "recusado" sem a API.
 - **Apresentação.** Recap dos dados, mensalidade, primeiro pagamento (pro-rata, quando houver), franquia e carência de 30 dias. Confirmação antes de cotar só quando algum slot não está ancorado. **A mensagem de cotação repete os dados usados** (`questions.recap`: "Dados usados: modelo 2016, 42 anos, CEP …"): rede visível, porque negação, número por extenso e número com dono errado escapam da ancoragem (limites conhecidos, README D5).
 - **Higiene de entrada** (`slots.py`): CEP como texto de 8 dígitos, **sem completar zero perdido**; `plano_id` explícito; `data_inicio` hoje ou futura; ano-modelo futuro vai ao humano.
@@ -297,8 +302,12 @@ ai-logs/             conversas com IA, limpas (Etapa 8)
 | Fast-path estrito (candidato, desligado, nada no produto o chama) | ✅ | `fastpath.py` |
 | `make llm-ping` (1 requisição), `make smoke-llm` (free tier, 31 requisições, falha rápido) e as 15 mensagens | ✅ (falta rodar com a chave) | `tools/` |
 | Detector de PII compartilhado | ✅ | `pii.py` |
-| Templates de cotação, recusa e handoff; fallback por passo | ❌ | **2b** |
-| `MockLLM`, orquestrador, mascarador, SQLite, `SqliteSink` | ❌ | **2b** |
+| Ancoragem de slots e `QuoteGate` (D5) | ✅ | `anchoring.py`, `questions.py` |
+| Templates de cotação, recusa, handoff e intenções de risco; fallback por passo | ✅ | `templates.py` |
+| `MockLLM` determinístico (mesma interface, mesma validação, mesmo `GuardedLLM`) | ✅ | `mock_llm.py` |
+| Mascarador de PII (antes do LLM e do banco) | ✅ | `masker.py` |
+| SQLite (4 tabelas) e `SqliteSink` | ✅ | `store.py` |
+| Orquestrador (máquina de estados), terminal e os quatro cenários | ✅ | `orchestrator.py`, `cli.py`, `tools/scenarios.py` |
 | Pré-checagem de elegibilidade e teste de contrato | ❌ | **3** |
 | Necessidade → plano, objeção, demais motivos de handoff | ❌ | **3** |
 
@@ -317,10 +326,12 @@ Entregue: tudo marcado ✅ na seção 11. **Testes:** relógio virtual (sem `sle
 `smoke-llm` (gate de PII aborta antes da chamada, erro silencioso, divergência do fast-path, aquecimento excluído, veredito, **31 requisições contadas, pré-checagem de cota, 429 por minuto e diário**).
 **O que a 2a NÃO provou:** que o OpenRouter aceita o pedido como montado, a latência e a qualidade de extração do modelo real, e se requisição que falha conta na cota diária. Isso é o `smoke-llm` rodado pelo autor, e a 2b só começa depois dele.
 
-### Etapa 2b — Fatia vertical · limite de 90 min
+### Etapa 2b — Fatia vertical · limite de 90 min · ✅ escrita e testada com o mock; falta a execução com o LLM real (Etapa 7)
 Terminal, `MockLLM` determinístico (mesma interface, com caminho de fallback para template), orquestrador (máquina de estados), templates, mascarador de PII, SQLite (4 tabelas), `SqliteSink`. Cobre: caminho feliz, recusa da API, `QUOTE_UNAVAILABLE`, `HUMAN_REQUESTED`.
 *Testes:* conversa completa por plano contra a API de teste; recusa registrada fora de handoff; queda total → handoff com pacote completo, motivo **e componente**; teto de 20s: uma mensagem terminal visível, nunca silêncio; invariante "todo R$ existe em `quotes`"; toda mensagem/cotação/tentativa com id e status; reconstrução pelo `trace_id`; dedupe; `SqliteSink` passa em `SinkContract`; `reply` reprovado → template com violação registrada; varredura de PII no banco e nos logs, com formatos além dos do dataset.
 **Estourou 90 min:** sai o circuit breaker e `quote_attempts` vira JSON, sem discussão.
+**Entregue:** tudo acima, **sem acionar o corte** (as 4 tabelas e o disjuntor da camada de LLM ficaram). Testes em `tests/test_orchestrator.py`, `test_cli.py`, `test_masker.py`, `test_mock_llm.py`, `test_sqlite_sink.py` e, contra a API de teste, `tests/integration/test_orchestrator_real_api.py` (o preço que o lead lê é o que a API devolve, por plano; recusa de verdade; os quatro cenários). `make demo` roda os quatro cenários e grava `var/scenarios/`.
+**O que a 2b NÃO provou:** (a) nada com o modelo real: o `MockLLM` prova o encanamento (mascarar, ancorar, templates, cotar, registrar), **não** a qualidade da conversa; o caminho do LLM real foi exercitado só contra um servidor local falso (`test_cli.py`); (b) o estado vivo da conversa está na memória do processo (limite 6 de 14); (c) o teto de 20s com um LLM real lento: o teste usa um LLM que trava e um relógio virtual, não um provedor; (d) ~~as 2 suítes que dependem do SDK da Anthropic não rodaram no container 3.12~~ **fechado:** `make verify-clean` instala do `pyproject` num container `python:3.12-slim` limpo (`git archive`, nada do venv do host) e roda tudo, com `[dev,llm]` (1233 passam, 2 pulam por falta do dataset) e só com `[dev]` (1180 passam, 4 pulam, cada um com motivo: SDK ausente ou dataset ausente).
 
 ### Etapa 3 — Cobertura de handoff e experiência · limite de 50 min
 Todos os motivos de handoff; pré-checagem e chamada de confirmação; necessidade → plano; objeção; correções; CEP inválido; ano-modelo futuro; mídia.
@@ -367,4 +378,9 @@ Cortar nesta ordem (o primeiro é o mais barato de perder):
 - A pré-checagem duplica semântica; o teste de contrato a mantém honesta, e se deixar de compensar ela sai sem afetar o resto.
 - O relógio do servidor define a idade do veículo (UTC no container); perto de 31/12 o Brasil e o servidor discordam por algumas horas.
 - O modo real não é determinístico: só o mock reproduz.
+- **O estado vivo da conversa (livro-razão, pergunta pendente, cotação exibida) está na memória do processo.** O SQLite guarda o registro (mensagens, cotações, tentativas, snapshot dos slots, pacote de handoff), não o estado: reiniciar o processo encerra a conversa, não a apaga. O webhook (Etapa 5, bônus) teria que reidratar o livro-razão do snapshot.
+- O LLM roda numa thread com prazo para o teto de 20s valer; se o provedor responder depois, a resposta é descartada, mas a requisição já foi feita e conta na cota.
+- Entrada que o `SlotLedger` recusa depois de verificada (ano-modelo futuro, data no passado) vai a `DATA_AMBIGUOUS` em vez de reperguntar; refinar isso é Etapa 3.
+- O texto de recusa repete o `motivo` que a API devolveu, sem reescrevê-lo (hoje, sem acentos, como a API manda).
+- O mascarador reconhece CPF, e-mail, telefone, placa, caminho de home, segredos, data de nascimento por extenso e nome **introduzido** ("meu nome é…", "sou a…") ou conhecido; **não** reconhece um nome solto nem um endereço. O que ele deixa passar e o detector ainda vê vira `SAFETY_GUARD` componente `masker`.
 - Versões do Python verificadas: 3.12 e 3.14. A 3.13 está dentro da faixa declarada mas **não foi testada**.

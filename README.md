@@ -3,9 +3,9 @@
 Agente de vendas de seguro auto para o desafio técnico FDE / AI Engineer da Namastex: conversa com o lead,
 qualifica, cota um plano pela API de cotação e decide entre resolver sozinho e passar para um humano.
 
-> **Estado: Etapas 0 e 1 concluídas e a 2a escrita; o roteiro vai até a Etapa 8 (entrega).** Existem o cliente da `/quote`, a normalização de slots, o guardrail com base de fatos, o contrato do destino do handoff, a camada de LLM agnóstica de provedor (D4) e o `smoke-llm`.
-> **O `smoke-llm` com o modelo real ainda não rodou**, então latência, formato e acerto do LLM são hipótese. A Etapa 2b (terminal, mock, orquestrador, persistência) só começa depois dele.
-> **O agente ainda não conversa.**
+> **Estado: Etapas 0, 1, 2a e 2b escritas; o roteiro vai até a Etapa 8 (entrega).** O agente **conversa no terminal** (`make chat`), com o `MockLLM` ou com o modelo real pelo mesmo caminho, e grava tudo no SQLite. Existem o cliente da `/quote`, a ancoragem de slots (D5), os templates (D6), o mascarador de PII, o orquestrador e os quatro cenários (`make demo`, D8).
+> O `smoke-llm` rodou duas vezes com o modelo real e o gate mudou de lugar (D7). **A conversa inteira com o modelo real ainda não rodou**: o que está provado é o encanamento com o mock; a qualidade da conversa com o LLM real é a Etapa 7, feita pelo autor.
+> Falta: pré-checagem de elegibilidade e os demais motivos de handoff (Etapa 3), o endurecimento do LLM (4), o webhook (5, bônus), a execução com o LLM real e o log (7) e a entrega (8).
 > Esta página cresce a cada etapa. O que está marcado _(planejado)_ descreve o que vem, não o que já roda.
 > Roteiro e critérios de corte em [`docs/PLAN.md`](docs/PLAN.md); achados que motivam o desenho em [`docs/FINDINGS.md`](docs/FINDINGS.md).
 
@@ -24,6 +24,14 @@ make test
 ```bash
 make test-integration
 ```
+
+**Conversar com o agente** (mock, offline; precisa da API de cotação, e sem a `/planos` usa a cópia vendorizada e avisa):
+
+```bash
+make api-test-up && make chat ARGS="--api http://localhost:8100"
+```
+
+`make demo` roda os quatro cenários (cotação, recusa, `/quote` fora do ar, pedido de humano) e grava a transcrição e os registros do SQLite em `var/scenarios/`. `make chat ARGS="--llm real"` usa o modelo do `.env` e **gasta a cota diária do provedor** (a mesma contada pelo smoke).
 
 `make smoke-llm-dry` roda o `smoke-llm` com um LLM de mentira (sem chave, sem rede).
 Com o modelo de verdade pelo OpenRouter: copie `.env.example` para `.env` e preencha `LLM_API_KEY` (ou `OPENROUTER_API_KEY`). **Primeiro `make llm-ping`**: uma única requisição real que confere a autenticação, se o OpenRouter aceita o pedido como montado (`json_schema` + `require_parameters`), se o modelo devolve saída válida e a latência dessa amostra; confirma que a chave está setada sem mostrar valor, prefixo nem tamanho.
@@ -95,7 +103,7 @@ Resumo; as tabelas, a derivação e as premissas estão em [`docs/PLAN.md`](docs
 - **O `reply` curto não resolve sozinho o perfil de modelo médio** (turno sem cotação: 8,5s → 8,3s com o teto de 40 palavras). A lista compacta de slots leva a 5,2s, a 3% do critério e sem margem.
   Na prática a chamada única exige um modelo pequeno.
 - **O p95 de um turno com cotação continua dominado pelo modo lento de 8s da `/quote`** (8,1s sozinha; 9,2s somando um LLM rápido).
-- **Modelo: ainda não escolhido.** O smoke decide, pelo mesmo critério de antes (D4): 0 extrações erradas em silêncio, 100% de saída válida e p95 projetado do turno dentro do critério acima.
+- **Modelo: ainda não escolhido.** O smoke decide, pelo mesmo critério de antes (D4), com o gate de preço no lugar do erro cru (D7): 0 slots errados chegariam à `/quote`, 100% de saída válida e p95 projetado do turno dentro do critério acima.
   **Custo (estimativa, não medição):** feito com a tabela de preços da Anthropic para o Haiku 5.5, o caso de referência: centavos por conversa (US$ 1,14 por mil conversas com cache; US$ 6,39 com 10% de escalonamento para o Sonnet 5.5). Redigir a resposta no LLM acrescenta +16% a +32%. No OpenRouter o preço varia por modelo e deve ser refeito com o modelo escolhido. Latência decide, não preço.
 - **Fast-path por regex nasce desligado.** Só valeria para resposta direta ao slot perguntado com valor inequívoco, e rende ~0,2 a 0,3s de p95 com o LLM rápido. O `smoke-llm` mede a divergência regex vs LLM; se divergir, sai.
 - **O que ainda é hipótese:** a latência do LLM e a contagem de tokens. O `make smoke-llm` (Etapa 2a) as mede com chamadas reais, usando só mensagens escritas à mão e sem PII. Provedor e modelo: D4.
@@ -116,7 +124,7 @@ Resumo; as tabelas, a derivação e as premissas estão em [`docs/PLAN.md`](docs
   A documentação não diz se requisição que falha conta na cota diária, então o smoke assume que conta.
 - **A chave nunca aparece em log, erro, relatório nem saída:** tudo que sai passa por `redact`, e [`tests/test_key_safety.py`](tests/test_key_safety.py) faz o servidor falso devolver a chave em cada modo de falha e varre tudo que o processo escreveu. Verificado removendo o `redact`: os testes reprovam (8 dos 25 na ocasião).
 - **O contrato é qualquer modelo com saída estruturada que passe no `make llm-ping` e no `make smoke-llm`, não um modelo específico.** Quem decide é o smoke, pelo critério de sempre: 0 extrações erradas em silêncio, 100% de saída válida (das chamadas que o provedor entregou; o bloqueio do provedor é medido à parte, 0 em mensagens benignas, ver `docs/PLAN.md` 5.6) e p95 projetado do turno.
-  O **alvo** do smoke hoje é `dots-studio/dots-3-note-preview:free` (o default da configuração): declara saída estruturada, o raciocínio não é obrigatório (`reasoning.mandatory: false` no catálogo) e passou no ping. É alvo, não escolha; é um preview com `expiration_date` de 2026-12-31 e um único provedor listado.
+  **O `dots-studio/dots-3-note-preview:free` é o modelo da demo** (o default da configuração). O smoke já cumpriu o papel e não será mais rodado: foram dois, e o resultado está em D7. **Riscos, ditos antes de alguém depender dele:** (1) é um **preview**, com `expiration_date` de **2026-12-31** no catálogo, depois do qual some; (2) tem um **único provedor** listado (AtlasCloud), sem alternativa se cair, e endpoints gratuitos oscilam (fato abaixo); (3) é gratuito, então pode **reter ou treinar com os prompts**: por isso o mascarador e o gate de PII ficam ligados e nada do dataset vai a ele; (4) a taxa de acerto vem de 15 mensagens × 2 repetições, **alarme e não benchmark**; (5) o modelo **não é determinístico** (a mesma mensagem foi lida de forma diferente em repetições seguidas), e é por isso que a garantia de preço não depende dele (D5, D7). Trocar de modelo é mudar `LLM_MODEL` e validar com `make llm-ping`; o contrato acima não muda.
 - **Fato operacional: endpoints gratuitos oscilam, e o mock é o caminho reproduzível.** Em 2026-10-20 o primeiro alvo, `nvidia/nemotron-3-super-120b-a12b:free`, devolveu 404 (`Provider returned error`) porque o único provedor dele estava fora do ar: uptime de 0% nos 30 minutos anteriores e 44% no dia, segundo `GET /models/{id}/endpoints`. O mesmo pedido sem `json_schema`, sem `require_parameters` e sem `reasoning` falhou igual, então a causa não era o formato do pedido. Um modelo gratuito pode cair a qualquer hora, e por isso o `llm-ping` gasta 1 requisição antes do smoke de 31.
   O LLM real mede e gera o log final (que cita o modelo que de fato respondeu); **o que se reproduz é o mock determinístico** (Etapa 2b; até lá, a reprodutibilidade vem dos testes contra servidor local falso e do `make smoke-llm-dry`).
 - **Verificado em uma amostra, não em volume:** o `llm-ping` com o `dots-3-note-preview` aceitou o pedido completo (`json_schema` + `require_parameters` + `reasoning=none`) e devolveu saída válida (2,15 s, 1 amostra, 2026-10-20). **Não verificado:** latência e acerto em volume (é o smoke) e se requisição que falha conta na cota diária. Modelos free podem reter o prompt; o gate de PII continua ligado e o smoke só usa mensagens escritas à mão, sem PII.
@@ -145,23 +153,65 @@ A rede contra esses três é a repetição dos dados na mensagem de cotação.
 
 **Motivo:** regex não julga sentido. O smoke de 2026-10-20 trouxe dois replies de risco que o guardrail aprovou e que enganam a olho: `Sim, mas há carência de 30 dias` a quem perguntou se um roubo amanhã é coberto, e `a melhor opção da AutoSeguro` numa objeção de preço. Caçar esses padrões com mais regex é uma corrida perdida; o R7 continua estrito e nenhuma regra nova foi acrescentada.
 
-- **Template (risco):** dúvida de carência ou cobertura, objeção de preço, sinistro, pedido de humano (e `question_not_in_facts`, que é uma dúvida de cobertura sem fato). **LLM (neutro):** saudação, próxima pergunta, confirmação, sob o guardrail R1–R7.
+- **Template (risco):** dúvida de carência ou cobertura, objeção de preço, sinistro, pedido de humano, reclamação, cancelamento e o lead querer fechar (e `question_not_in_facts`, que é uma dúvida de cobertura sem fato). **O LLM não redige nada que leve a um handoff**: toda intenção que é motivo de handoff tem reply por template, e um teste reprova se surgir uma nova fora da lista. **LLM (neutro):** saudação, próxima pergunta, confirmação, sob o guardrail R1–R7.
 - [`templates.py`](src/autoseguro/templates.py): a dúvida de cobertura é respondida com o **texto dos fatos** escolhidos pelo que o **lead escreveu** (mesmo léxico do guardrail), não pelo que o modelo citou, que uma injeção poderia manipular; sem fato, a resposta é "não tenho essa informação, e prefiro não chutar". A objeção de preço segue o fluxo do PLAN: **uma** alternativa real, e na segunda hesitação `PRICE_OBJECTION`, sem desconto. Sinistro e pedido de humano viram handoff (`CLAIM_SINISTRO`, `HUMAN_REQUESTED`) com o texto genérico e honesto de D2.
 - **Do LLM, nesses turnos, vale só a intenção.** Por isso **reconhecer a intenção de risco virou critério do smoke (100%)**: se o modelo classifica uma dúvida de carência como `provide_info`, o reply livre dele chega ao lead, ainda sob o guardrail. O smoke pontua o texto **entregue** ao lead, e o guardrail passa a medir só os replies que o LLM de fato escreveu.
 - **Prova:** o corpo de todo template passa no `check_reply` por construção (testado em todas as intenções), e os replies reais enganosos (m10 r2, m11 r1 e r2) são substituídos em teste. Reaplicado às 29 saídas antigas, o smoke novo entrega 8 por template de risco, 15 do LLM e 6 por fallback, com reconhecimento de risco em 8 de 8.
-- **Fica de fora:** `complaint`, `cancel` e `ready_to_close` também são motivos de handoff no PLAN e continuam com o LLM neutro; candidatos naturais ao mesmo tratamento.
+- **Reclamação, cancelamento e fechar** (`COMPLAINT`, `CANCELLATION`, `READY_TO_CLOSE`) entraram depois, pelo mesmo motivo: são handoff, e o texto que o lead lê não pode prometer nada. `out_of_scope` e `unclear` seguem com o LLM neutro: não são handoff por si; um handoff que o orquestrador decide (`OUT_OF_SCOPE`, `SAFETY_GUARD`, `DATA_AMBIGUOUS`…) também usa só o texto genérico de D2.
+
+### D7. O gate do smoke muda de lugar, não de rigor: vale o que chegaria à `/quote`, não o que o modelo cru erra
+
+**Motivo:** depois de D5, a garantia de preço é do **sistema** (a ancoragem), não do modelo. Continuar reprovando o smoke por um erro que a ancoragem já barra mediria a coisa errada e deixaria de medir a certa. A pergunta do gate passa a ser: *algum slot errado chegaria à `/quote` sem confirmação do lead?* Tem que dar **0**, e o smoke prova isso reaplicando o `SlotLedger` às extrações gravadas (sem modelo, [`tools/smoke_rescore.py`](tools/smoke_rescore.py) e o próprio `make smoke-llm`).
+
+O relatório passa a trazer três números: **(1)** slots errados que chegariam à `/quote` sem confirmação (**o gate duro**); **(2)** confirmações pedidas por mensagem (**o custo em turnos**, e quantas caíram em mensagem limpa); **(3)** o erro silencioso do modelo cru, que **continua reportado e deixa de ser gate**. Nenhum outro critério mudou.
+
+| Os dois smokes reais, `dots-3-note-preview` | 1º (prompt antigo) | 2º (prompt novo) |
+|---|---|---|
+| (3) Erro silencioso do **modelo cru** (reportado) | 2 | 1 |
+| (1) Slots errados que chegariam à `/quote` (**gate: 0**) | **0** | **0** |
+| (2) Confirmações / mensagens com slot | 8 / 18 (0,44) | 7 / 17 (0,41) |
+| Confirmações em mensagem limpa | 0 | 0 |
+| Veredito com o gate antigo | NÃO PASSA | NÃO PASSA (1 erro cru) |
+| Veredito com o gate novo | NÃO PASSA (guardrail 71,4%) | PASSA |
+
+- **O erro cru que sobrou** no 2º smoke é o `m08`, repetição 2: `o carro é 2015 mas o modelo é 2016` → `veiculo_ano=2016`, sem incerteza (o certo era marcar a ambiguidade). A ancoragem o segura: dois anos no texto, valor pendente, e a pergunta ao lead é `Só pra confirmar: modelo 2016?`.
+- **Leia o "PASSA" do 2º smoke com cuidado:** ele passa porque o gate mudou de lugar, não porque o modelo parou de errar. O modelo ainda errou uma vez no cru; o que mudou é que o sistema não deixa esse erro virar preço.
+- **Limites do gate:** é a ancoragem aplicada **uma mensagem por vez**, com o gabarito escrito à mão; os limites conhecidos de D5 (negação, número por extenso, número com dono errado) escapam dela, e um teste mostra o gate **reprovando** num caso de negação. A amostra é de 15 mensagens × 2 repetições: alarme, não benchmark. Extração ignorada (o modelo inventou um dado ou devolveu `?`) não conta como confirmação: o dado continua faltando e a pergunta é a ordinária.
+
+### D8. A conversa de ponta a ponta: o mascarador vem antes de tudo, o estado decide o próximo passo e toda falha vira uma mensagem e um handoff
+
+**Motivo:** "nunca inventa preço, nunca fica em silêncio, nada sai da máquina sem máscara" só vale se for propriedade do **fluxo**, não de cada peça isolada. [`orchestrator.py`](src/autoseguro/orchestrator.py) é onde isso se amarra; cada garantia abaixo tem teste.
+
+**A ordem de um turno:** (1) dedupe pelo id do canal; (2) **mascarar** (o texto cru não sai de `handle`) e conferir o resultado com o detector de PII; (3) o LLM, **o mesmo `GuardedLLM` para o mock e para o modelo real**, propõe slots e intenção; (4) o `SlotLedger` decide o que vale (D5); (5) a resposta sai de template (risco, confirmação, necessidade, cotação, recusa, handoff) ou do LLM (conversa neutra, sob o guardrail e de novo pelo mascarador); (6) a cotação sai só de `QuoteGate`, e **todo "R$" da mensagem é conferido contra o número que a API devolveu antes de enviar**; (7) o pacote de handoff vai ao SQLite **antes** de a resposta chegar ao lead, e a outros destinos depois.
+
+| Situação | O que o lead lê | Registro |
+|---|---|---|
+| Cotação ok | template com o recap dos dados usados | `quotes` + `quote_attempts` |
+| Recusa da API (422 de negócio) | template por **código** do motivo (conjunto fechado, sem o texto cru da API) e os dados que a motivaram; encerra | conversa `refused`, **não** é handoff |
+| `/quote` esgotou tentativas ou orçamento | "o sistema que calcula os valores está instável… prefiro não estimar nenhum preço" + handoff | `QUOTE_UNAVAILABLE`, componente `quote_api` |
+| Provedor filtra a geração (`content_filter`) | 1 retry; filtrou de novo: a pergunta pendente por template, nenhum slot muda; 2º turno seguido: handoff | `SAFETY_GUARD`, componente `llm` (PLAN 5.6) |
+| LLM fora (timeout, 5xx, cota, protocolo) | "estou com uma instabilidade…" + handoff | `SAFETY_GUARD`, componente `llm` |
+| O mascarador deixou passar algo que o detector vê | handoff, nada vai ao LLM nem ao banco | `SAFETY_GUARD`, componente `masker` |
+| Qualquer exceção inesperada, ou um R$ que a API não devolveu | handoff | `SAFETY_GUARD`, componente `orchestrator` (só o **nome** da exceção é gravado) |
+
+- **O LLM roda numa thread com prazo**, então o teto de 20s vale mesmo que o provedor demore; o "um instante" (2,5s) existe **só durante a `/quote`**, em texto de template, e o cliente da cotação o dispara descontando o que o turno já gastou. Exatamente **uma** mensagem terminal por turno, testado com falhas aleatórias.
+- **A pergunta de necessidade e toda confirmação são do produto, não do modelo.** As 4 violações do guardrail do 2º smoke (R2 ×2, R7 ×2) eram **2 replies** (m04 rep. 1 e m05 rep. 2), os dois a **pergunta de necessidade** com `facts_used` vazio: nomear as coberturas dispara o R7 (termo sem fato) e `24h` dispara o R2 (número fora dos fatos citados). Causa comum, então a correção é uma só e **não é regra nova**: o fato `necessidades` (para o modelo poder citá-lo) e a pergunta passar a ser texto do produto.
+- **O que os testes provam** (`tests/test_orchestrator.py`, `test_cli.py`): nenhum CPF, e-mail, telefone, placa ou nome chega ao LLM (inclusive ao provedor falso, byte a byte), ao banco (inclusive o arquivo e o WAL) nem à tela do lead; um LLM hostil que inventa os cinco slots não faz a `/quote` ser chamada; o preço que o lead lê é o que a API devolve, por plano (contra a API real); a conversa inteira se reconstrói pelo `trace_id`; reentrega da mesma mensagem não reprocessa nada.
+- **O lead nunca lê o texto cru da API.** O motivo de uma recusa (422) é uma frase do serviço, sem acento, que pode mudar sem aviso. [`refusals.py`](src/autoseguro/refusals.py) o transforma em um **código de um conjunto fechado** (idade acima do limite, idade fora da faixa, veículo velho demais, ano do veículo fora da faixa, plano inexistente, outro) e [`templates.py`](src/autoseguro/templates.py) tem um texto acentuado para cada um, com os números (18, 75, 20 anos) lidos do `/planos`. Motivo desconhecido cai num genérico e o texto cru fica só no banco. "Plano inexistente" é erro **nosso** e vai a humano, nunca vira "perfil recusado". Um teste percorre todos os motivos que o serviço pode devolver e exige um template próprio para cada um.
+- **O núcleo roda sem o SDK da Anthropic.** `pip install -e ".[dev]"` instala e testa tudo; as duas suítes que dependem do SDK (`test_claude_llm.py`, `test_llm_layers.py`) e as que dependem do pandas viram *skip com motivo* (`importorskip`). O `make verify-clean` prova isso: extrai a árvore com `git archive` num container `python:3.12-slim`, cria um venv novo, instala do `pyproject` e roda os testes, com e sem `llm`. Nada do venv do host entra.
+- **A PII de teste é gerada na hora.** CPF, telefone, e-mail, placa, caminho de home e chaves usados nos testes nascem em [`tests/synthetic_pii.py`](tests/synthetic_pii.py) (CPF com dígitos verificadores calculados ali, a partir de um hash fixo); nenhum literal existe em arquivo do repo, e o teste de higiene **não tem mais allowlist**: ele também reprova qualquer sequência de 11 dígitos com verificadores válidos, que é o que um scanner externo apontaria.
+- **Limites, ditos sem rodeio:** o **mock prova o encanamento, não a qualidade da conversa** (ele extrai com o mesmo leitor determinístico da ancoragem, então concorda com ela por construção); o estado vivo da conversa fica na memória do processo (o SQLite guarda o registro); o mascarador é um piso (não reconhece nome solto nem endereço); entrada inválida depois de verificada vai a `DATA_AMBIGUOUS` em vez de reperguntar (Etapa 3). A lista completa está em [`docs/PLAN.md`](docs/PLAN.md), seção 14.
 
 ### Demais decisões
 
-Pré-checagem de elegibilidade, recusa, objeção de preço, necessidade → plano, modo mock do LLM, persistência: ver
-[`docs/PLAN.md`](docs/PLAN.md), seção 2.
+Pré-checagem de elegibilidade e os demais motivos de handoff (Etapa 3): ver [`docs/PLAN.md`](docs/PLAN.md), seções 2, 7 e 8.
 
 ## Estrutura
 
 | Caminho | Conteúdo |
 |---|---|
-| `src/autoseguro/` | Código do produto: `quote_client`, `slots`, `facts`, `guardrail`, `handoff`, `budgets`, `pii`, `llm/` (interface, adaptadores, `GuardedLLM`, cota, fábrica) |
-| `tools/` | `smoke_llm.py` e as 15 mensagens escritas à mão |
+| `src/autoseguro/` | Código do produto: `orchestrator` (a máquina de estados), `cli`, `anchoring`, `templates`, `questions`, `masker`, `store` (SQLite + `SqliteSink`), `mock_llm`, `quote_client`, `slots`, `facts`, `guardrail`, `handoff`, `budgets`, `pii`, `llm/` (interface, adaptadores, `GuardedLLM`, cota, fábrica) |
+| `tools/` | `smoke_llm.py`, `smoke_rescore.py` e as 15 mensagens escritas à mão; `scenarios.py` (os quatro cenários) |
 | `analysis/` | Scripts de análise (só agregados) e `results/` |
 | `tests/` | Higiene do repo, análises, integração com a API |
 | `docs/` | `PLAN.md`, `FINDINGS.md`, `BACKLOG.md` (o que ficou de fora de propósito) |
