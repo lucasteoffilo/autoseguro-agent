@@ -30,8 +30,19 @@ O que ficou de fora **de propósito**. Não são promessas: cada item diz por qu
 
 5. **Seção do export com os textos do modelo trocados por desenho.**
    Hoje a tabela de barrados lista só o que o modelo poderia ter conduzido; os textos que o guardrail marcou em turnos que o produto troca por desenho (pergunta de necessidade, confirmação, eco) só existem no banco (`meta.blocked_reply`). Na 2ª rodada do DEMO foram 7 textos, e para julgá-los foi preciso consultar o banco. Uma seção "Texto do modelo trocado por desenho, marcado pelo guardrail" no export os traria.
-   *Por que ficou de fora:* o número já respondeu o que ele existia para responder: o texto do modelo que chega ao lead é só a abertura. *Vale fazer se:* o texto do modelo voltar a conduzir turnos além da abertura.
+   Vale também para o texto que o modelo escreveu na abertura e a regra da única pergunta trocou (`template_question`): ele não é gravado, e na 3ª rodada as 3 aberturas foram trocadas sem que se possa ler o que o modelo havia escrito.
+   *Por que ficou de fora:* o número já respondeu o que ele existia para responder: o texto do modelo que chega ao lead é só a abertura. *Vale fazer se:* o texto do modelo voltar a conduzir turnos além da abertura, ou se alguém precisar auditar o que o modelo escreve nas aberturas.
 
 6. **Gravar `blocked_reply` também no caminho de risco.**
    Nas intenções de risco o texto do modelo é sempre substituído por template, e quando o guardrail o marca (por exemplo `R1_dinheiro` na oferta de plano mais barato do cenário 4) o texto barrado não é gravado, só a regra. Não dá para julgar se foi falso positivo.
    *Por que ficou de fora:* nesses turnos o texto do modelo nunca chega ao lead, então o falso positivo não tem custo. *Vale fazer se:* o guardrail passar a decidir algo nesses turnos.
+
+## Conversa
+
+7. **Variantes de template.**
+   O repertório do lead é fixo: o "Anotado:" abre quase todo turno com dado novo, a pergunta de necessidade é sempre a mesma frase com três opções, a recusa de escopo repete a mesma frase duas vezes seguidas e a resposta a desconto é seca (D11). Duas ou três variantes por template, escolhidas de forma determinística (pelo `trace_id` e pelo turno, para o teste continuar reproduzível), quebrariam a repetição sem dar a caneta ao modelo; cada variante passa no `check_reply` por construção, como as de hoje.
+   *Por que ficou de fora:* é melhoria de naturalidade, não de segurança nem de correção, e cada variante multiplica os textos que os testes e o guardrail precisam cobrir. *Vale fazer se:* um avaliador ou um lead real apontar a repetição como problema.
+
+8. **Reescrever o 7b e o desfecho esperado.**
+   Na 3ª rodada o modelo real rotulou dois dos quatro pedidos do 7b como `out_of_scope` e a 2ª recusa seguida virou handoff, de modo que o (d) nunca chegou ao modelo. A regra de preço antes de dados (D8) tirou (b) e (c) desse caminho e a execução final o exerce de novo, mas o DEMO ainda descreve o 7b como "volta à pergunta do produto" para as quatro. Se a execução final mostrar outro desfecho seguro (por exemplo, handoff `OUT_OF_SCOPE` por recusas de escopo seguidas), o texto do DEMO deve acompanhá-lo, e o (d) pode virar um 7c separado.
+   *Por que ficou de fora:* não bloqueia o envio; a defesa já foi medida (nada vazou nas duas rodadas).
