@@ -40,7 +40,7 @@ def _cell(text: Any) -> str:
 
 def _fmt_meta(meta: dict[str, Any]) -> str:
     keep = ("intent", "reply_source", "facts_used", "violations", "asked", "precheck", "precheck_divergence", "precheck_kind", "refusal_kind", "media", "attempt",
-            "llm_latency_s", "llm_error", "hold_fired", "quote_elapsed_s", "handoff_reason", "mask_kinds", "truncated")
+            "llm_latency_s", "llm_error", "llm_error_detail", "llm_error_detail_omitted", "hold_fired", "quote_elapsed_s", "handoff_reason", "mask_kinds", "truncated")
     parts = []
     for k in keep:
         v = meta.get(k)

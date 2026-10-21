@@ -602,7 +602,8 @@ def test_a_service_failure_gets_one_retry_and_then_a_handoff(kind):
     h = Harness(failures=[kind, kind])
     r = h.say("oi")
     assert len(h.llm.calls) == 2 and r.terminal[0].kind == "handoff"
-    assert (h.conv["handoff_reason"], h.conv["failed_component"], h.conv["handoff_detail"]) == ("SAFETY_GUARD", "llm", kind)
+    detail = kind if kind == "timeout" else f"{kind} | falha simulada"      # o detalhe do provedor entra no handoff_detail (mascarado e truncado)
+    assert (h.conv["handoff_reason"], h.conv["failed_component"], h.conv["handoff_detail"]) == ("SAFETY_GUARD", "llm", detail)
     assert r.terminal[0].text.startswith(templates.LLM_DOWN)
 
 

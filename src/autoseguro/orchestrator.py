@@ -387,9 +387,10 @@ class Orchestrator:
         message = build_user_message(today=self._today(), known_slots=verified, asked_slot=conv.asked[0] if conv.asked and conv.asked[1] != "offer" else None,
                                      history=history, message=text)
         outcome = self._call_with_retry(t, message, [*lead_texts, text])
-        if isinstance(outcome, tuple):                   # falha dura: (componente, detalhe)
-            component, detail = outcome
-            self._fail(t, HandoffReason.SAFETY_GUARD, component, detail=detail,
+        if isinstance(outcome, tuple):                   # falha dura: (componente, codigo, resultado do provedor, se houve)
+            component, code, res = outcome
+            t.llm = self._result_meta(res)
+            self._fail(t, HandoffReason.SAFETY_GUARD, component, detail=self._detail_text(code, res),
                        lead_in=templates.SAFETY if component is FailedComponent.MASKER else templates.LLM_DOWN)
             return None
         t.llm = self._llm_meta(outcome)
@@ -398,7 +399,7 @@ class Orchestrator:
             return outcome.gres
         conv.streak += 1                                 # filtrado pelo provedor ou saida inutil: nao extrai nada, o ledger nao e tocado
         if conv.streak >= 2:
-            self._fail(t, HandoffReason.SAFETY_GUARD, FailedComponent.LLM, detail=outcome.error or "sem_saida")
+            self._fail(t, HandoffReason.SAFETY_GUARD, FailedComponent.LLM, detail=self._detail_text(outcome.error or "sem_saida", outcome.gres.result if outcome.gres else None))
             return None
         nq = self._next(conv)
         conv.asked = (nq.slot, nq.kind) if nq else None
@@ -406,7 +407,7 @@ class Orchestrator:
                   meta={**t.llm, "reply_source": "template_fallback", "violations": ["sem_saida"], "llm_error": outcome.error})
         return None
 
-    def _call_with_retry(self, t: _Turn, message: str, lead_texts: list[str]) -> _LLMOutcome | tuple[FailedComponent, str]:
+    def _call_with_retry(self, t: _Turn, message: str, lead_texts: list[str]) -> _LLMOutcome | tuple[FailedComponent, str, LLMResult | None]:
         error: str | None = None
         gres: GuardedResult | None = None
         for attempt in (1, 2):
@@ -416,13 +417,13 @@ class Orchestrator:
             try:
                 gres = self._call_llm(message, lead_texts, max(0.0, remaining))
             except UnsafePayload:
-                return FailedComponent.MASKER, "gate_de_pii"
+                return FailedComponent.MASKER, "gate_de_pii", None
             except QuotaExhausted:
-                return FailedComponent.LLM, "cota_diaria"
+                return FailedComponent.LLM, "cota_diaria", None
             except ProtocolError as exc:
-                return FailedComponent.LLM, f"protocolo:{exc.status}"
-            except ServiceUnstable:
-                return FailedComponent.LLM, "servico_instavel"
+                return FailedComponent.LLM, f"protocolo:{exc.status}", exc.result
+            except ServiceUnstable as exc:
+                return FailedComponent.LLM, "servico_instavel", exc.result
             error = gres.result.error
             klass = outcome_class(error)
             if error is None and gres.output is not None:
@@ -432,7 +433,7 @@ class Orchestrator:
             # "blocked" (filtro do provedor) e "service" (timeout, 5xx...): uma nova tentativa
         kind = "blocked" if outcome_class(error) == "blocked" else "service"
         if kind == "service":
-            return FailedComponent.LLM, error or "servico"
+            return FailedComponent.LLM, error or "servico", gres.result if gres else None
         return _LLMOutcome(kind, gres, error, attempt)
 
     def _call_llm(self, message: str, lead_texts: list[str], timeout_s: float) -> GuardedResult:
@@ -455,17 +456,36 @@ class Orchestrator:
             raise box["e"]
         return box["r"]
 
-    @staticmethod
-    def _llm_meta(o: _LLMOutcome) -> dict[str, Any]:
-        res = o.gres.result if o.gres else None
-        meta: dict[str, Any] = {"attempt": o.attempt}
+    def _llm_meta(self, o: _LLMOutcome) -> dict[str, Any]:
+        return {"attempt": o.attempt, **self._result_meta(o.gres.result if o.gres else None)}
+
+    def _result_meta(self, res: LLMResult | None) -> dict[str, Any]:
+        """O que o provedor respondeu, para o meta: latencia, tokens, o codigo do erro e, se houver, o DETALHE do erro (mascarado e truncado, ver `_excerpt`)."""
+        meta: dict[str, Any] = {}
         if res is not None:
             meta["llm_latency_s"] = round(res.latency_s, 3)
             if res.usage:
                 meta["usage"] = {"input_tokens": res.usage.input_tokens, "output_tokens": res.usage.output_tokens}
             if res.error:
                 meta["llm_error"] = res.error
+                if res.detail:
+                    shown = self._excerpt(res.detail)
+                    meta.update({"llm_error_detail": shown} if shown is not None else {"llm_error_detail_omitted": "pii"})
         return meta
+
+    def _detail_text(self, code: str, res: LLMResult | None) -> str:
+        """O `handoff_detail` de uma falha do LLM: o codigo e, se o provedor deu um detalhe, ele (redigido, truncado, sem PII)."""
+        if res is None or not res.detail:
+            return code
+        shown = self._excerpt(res.detail)
+        return f"{code} | {shown if shown is not None else 'detalhe omitido: pii'}"
+
+    def _excerpt(self, text: str) -> str | None:
+        """Um trecho que pode ir para o banco e para o export: passa pelo mascarador, depois por `redact` (chaves) e e truncado em `DETAIL_LIMIT`, mascarando ANTES de truncar. Se a varredura
+        que o export usa ainda achar PII ou segredo, devolve None: quem chama grava so a marca, e o export nunca recusa a conversa por causa disto."""
+        masked = self._masker.mask(text).text
+        shown = redact(masked, limit=DETAIL_LIMIT)
+        return None if (scan(shown) or scan(masked)) else shown
 
     # --- cotacao --------------------------------------------------------------------------------------------------------------------------------
     def _call_api(self, t: _Turn, request: QuoteRequest, kind: str, call: Callable[..., Any]) -> tuple[Any, str] | None:
@@ -592,10 +612,8 @@ class Orchestrator:
     def _blocked_text(self, reply: str) -> dict[str, str]:
         """O texto que o guardrail barrou, para o autor julgar se a barragem foi falso positivo. NUNCA vai ao lead. Passa pelo mascarador e e truncado no mesmo limite do detalhe de erro
         (`DETAIL_LIMIT`, mascarando ANTES de truncar). Se ainda sobrar PII ou segredo, pela varredura que o export usa, grava so a marca `blocked_reply_omitted`: o export nunca recusa a conversa por causa disto."""
-        shown = redact(self._masker.mask(reply).text, limit=DETAIL_LIMIT)
-        if scan(shown) or scan(self._masker.mask(reply).text):
-            return {"blocked_reply_omitted": "pii"}
-        return {"blocked_reply": shown}
+        shown = self._excerpt(reply)
+        return {"blocked_reply_omitted": "pii"} if shown is None else {"blocked_reply": shown}
 
     def _reply_action(self, t: _Turn, reply: templates.Reply, gres: GuardedResult | None) -> None:
         self._handoff(t, reply.handoff_reason or HandoffReason.OUT_OF_SCOPE, reply.text,
