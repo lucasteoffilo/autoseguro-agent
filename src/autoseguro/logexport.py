@@ -103,6 +103,30 @@ def export_markdown(store: Store, trace_id: str) -> str:
     return text.replace("(conferido ao final: a exportação é recusada se houver)", "sim (varredura do texto exportado: 0 achados)")
 
 
+def list_traces(store: Store) -> list[str]:
+    """Todos os `trace_id` do banco, do mais antigo ao mais novo (a ordem em que as conversas foram abertas)."""
+    with store._lock:
+        return [r["trace_id"] for r in store._conn.execute("SELECT trace_id FROM conversations ORDER BY created_at, trace_id")]
+
+
+def index_markdown(store: Store, traces: list[str], *, files: dict[str, str] | None = None) -> str:
+    """Uma tabela com uma linha por conversa: desfecho, motivo, cotacoes, tentativas com retry, mensagens. So metadados (nada de texto de mensagem), mas passa pela mesma varredura."""
+    rows = ["# Conversas exportadas", "", "| Conversa | Desfecho | Motivo / componente | LLM | Cotacoes (ok/recusa/fora) | Retries da /quote | Mensagens | Arquivo |", "|---|---|---|---|---|---|---|---|"]
+    for t in traces:
+        rec = store.reconstruct(t)
+        c, qs = rec["conversation"], rec["quotes"]
+        reason = (c["handoff_reason"] or "—") + (f" / {c['failed_component']}" if c["failed_component"] else "")
+        status = {s: sum(1 for q in qs if q["status"] == s) for s in ("ok", "refused", "unavailable")}
+        retries = sum(1 for q in qs for a in q["attempts"] if a["decision"] == "retry")
+        rows.append(f"| `{t}` | {c['status']} | {reason} | {c['llm_provider']}/{c['llm_model']} | {status['ok']}/{status['refused']}/{status['unavailable']} | {retries} | {len(rec['messages'])} | "
+                    f"{('[' + files[t] + '](' + files[t] + ')') if files and t in files else '—'} |")
+    text = "\n".join(rows) + "\n"
+    found = scan(text)
+    if found:
+        raise ExportRefused(sorted(set(found)))
+    return text
+
+
 def latest_trace(store: Store, *, status: str | None = None) -> str | None:
     """O `trace_id` da conversa mais recente (opcionalmente com um desfecho), para `--trace latest`."""
     with store._lock:

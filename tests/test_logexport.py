@@ -96,3 +96,35 @@ def test_the_cli_writes_the_file_and_refuses_with_exit_3_on_pii(tmp_path, capsys
     out2 = tmp_path / "log2.md"
     assert export_log.main(["--db", str(db), "--trace", h.trace, "--out", str(out2)]) == 3 and not out2.exists()
     assert V["email"] not in capsys.readouterr().err
+
+
+def test_export_all_writes_one_file_per_conversation_and_an_index_without_message_text(tmp_path):
+    from tools import export_log
+    db = tmp_path / "run.db"
+    store = Store(db)
+    h1 = Harness(err5xx(503, 0.2), ess(), store=store)
+    h1.run(*HAPPY)
+    from autoseguro.orchestrator import Orchestrator  # uma segunda conversa no MESMO banco
+    t2 = h1.orc.start()
+    h1.orc.handle(t2, "prefiro falar com uma pessoa")
+    out = tmp_path / "expl"
+    assert export_log.main(["--db", str(db), "--trace", "all", "--out", str(out)]) == 0
+    assert sorted(p.name for p in out.iterdir()) == sorted([f"{h1.trace}.md", f"{t2}.md", "index.md"])
+    index = (out / "index.md").read_text(encoding="utf-8")
+    assert f"| `{h1.trace}` | quoted |" in index and f"| `{t2}` | handoff | HUMAN_REQUESTED |" in index and "| 1/0/0 | 1 |" in index, "cotacao ok e 1 retry na primeira"
+    assert "prefiro falar" not in index and "onix" not in index, "o indice so tem metadados"
+
+
+def test_export_all_skips_only_the_conversation_that_the_scan_refuses_and_exits_3(tmp_path, capsys):
+    from tools import export_log
+    import datetime as dt
+    db = tmp_path / "run.db"
+    h = Harness(store=Store(db))
+    h.run(GREET)
+    bad = h.orc.start()
+    h.store.add_message(bad, "msg_x", role="lead", kind="text", text=f"dado {V['email']}", ts=dt.datetime.now(dt.UTC), status="processed")
+    out = tmp_path / "expl"
+    assert export_log.main(["--db", str(db), "--trace", "all", "--out", str(out)]) == 3
+    assert (out / f"{h.trace}.md").exists() and not (out / f"{bad}.md").exists() and (out / "index.md").exists()
+    err = capsys.readouterr().err
+    assert bad in err and V["email"] not in err

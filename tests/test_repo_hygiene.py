@@ -72,3 +72,18 @@ def test_no_raw_dataset_lines_in_repo(dataset_bodies, repo_text_files):
     haystacks = [(rel, text.lower()) for rel, text in repo_text_files]
     leaks = sorted({rel for rel, text in haystacks for body in dataset_bodies if body in text})
     assert not leaks, f"trechos de mensagens do dataset encontrados em: {leaks}"
+
+
+def test_every_make_target_the_readme_tells_you_to_run_exists_in_the_makefile():
+    """Bug de documentacao e comando que o README manda rodar e nao existe. Cobre `make x` em blocos de codigo e em texto."""
+    import re
+    readme = (ROOT / "README.md").read_text(encoding="utf-8")
+    makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
+    targets = set(re.findall(r"^([a-z][a-z0-9-]*):", makefile, flags=re.MULTILINE))
+    mentioned = set(re.findall(r"\bmake ([a-z][a-z0-9-]*)", readme)) - {"setup-claude"}
+    assert mentioned and not (mentioned - targets), f"o README manda rodar alvos que nao existem: {sorted(mentioned - targets)}"
+
+
+def test_the_compose_file_passes_the_quote_seed_through_so_the_documented_commands_work():
+    compose = (ROOT / "docker-compose.yml").read_text(encoding="utf-8")
+    assert 'QUOTE_SEED: "${QUOTE_SEED:-}"' in compose

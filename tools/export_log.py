@@ -2,6 +2,9 @@
 
     python tools/export_log.py --db var/autoseguro.db --trace trc_ab12cd34ef56 --out var/log.md
     python tools/export_log.py --db var/autoseguro.db --trace latest-quoted      # a conversa cotada mais recente
+    python tools/export_log.py --db var/autoseguro.db --trace all --out var/logs/   # TODAS as conversas do banco: um .md por conversa e um index.md
+
+Com `--trace all`, `--out` e uma PASTA. Uma conversa recusada pela varredura nao e escrita (as outras sao), e a saida e 3.
 
 Sai com 3 se a varredura achar PII ou segredo (nada e escrito) e com 2 se a conversa nao existe.
 """
@@ -14,8 +17,28 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path[:0] = [str(ROOT / "src")]
 
-from autoseguro.logexport import ExportRefused, export_markdown, latest_trace  # noqa: E402
+from autoseguro.logexport import ExportRefused, export_markdown, index_markdown, latest_trace, list_traces  # noqa: E402
 from autoseguro.store import Store  # noqa: E402
+
+
+def export_all(store: Store, out_dir: Path) -> int:
+    traces = list_traces(store)
+    if not traces:
+        print("o banco nao tem nenhuma conversa", file=sys.stderr)
+        return 2
+    out_dir.mkdir(parents=True, exist_ok=True)
+    files, refused = {}, []
+    for t in traces:
+        try:
+            (out_dir / f"{t}.md").write_text(export_markdown(store, t), encoding="utf-8")
+            files[t] = f"{t}.md"
+        except ExportRefused as exc:
+            refused.append(f"{t}: {exc}")
+    (out_dir / "index.md").write_text(index_markdown(store, traces, files=files), encoding="utf-8")
+    print(f"{len(files)} de {len(traces)} conversas exportadas em {out_dir}/ (index.md lista todas)")
+    for line in refused:
+        print(f"RECUSADA pela varredura de PII, nada escrito: {line}", file=sys.stderr)
+    return 3 if refused else 0
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -28,6 +51,8 @@ def main(argv: list[str] | None = None) -> int:
         print(f"banco nao encontrado: {args.db}", file=sys.stderr)
         return 2
     store = Store(args.db)
+    if args.trace == "all":
+        return export_all(store, args.out)
     trace = args.trace
     if trace in ("latest", "latest-quoted"):
         trace = latest_trace(store, status="quoted" if trace == "latest-quoted" else None) or ""

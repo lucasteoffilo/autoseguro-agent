@@ -7,7 +7,7 @@ BIN    := $(VENV)/bin
 DATASET_PATH ?= ../namastex-fde-challenge/dataset/conversations.parquet
 export DATASET_PATH
 
-.PHONY: help setup test test-integration api-up api-down api-test-up api-test-down chat demo evals evals-api export-log verify-clean analysis-dataset analysis-latency analysis-e2e analysis-cost llm-ping smoke-llm smoke-llm-anthropic smoke-llm-dry
+.PHONY: help setup test test-integration api-up api-down api-test-up api-test-down chat demo evals evals-api export-log export-logs probe-seed verify-clean analysis-dataset analysis-latency analysis-e2e analysis-cost llm-ping smoke-llm smoke-llm-anthropic smoke-llm-dry
 
 help: ## lista os alvos
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | sed -E 's/:.*## /\t/'
@@ -47,8 +47,14 @@ evals: ## os evals: sinteticos de handoff (sempre) + conversas derivadas do data
 evals-api: api-test-up ## os mesmos evals, com a /quote e o oraculo na API HTTP de teste (porta 8100)
 	$(BIN)/python tools/evals.py --api http://localhost:8100 $(ARGS)
 
-export-log: ## exporta o log de UMA execucao em Markdown (transcricao, tentativas da /quote, decisoes), mascarado e varrido. DB=var/autoseguro.db TRACE=trc_... OUT=var/log.md
+export-log: ## exporta o log de UMA conversa em Markdown (transcricao, decisoes, tentativas da /quote), mascarado e varrido. TRACE=trc_... (ou latest-quoted) DB=var/autoseguro.db OUT=var/log.md
 	$(BIN)/python tools/export_log.py --db $(or $(DB),var/autoseguro.db) --trace $(TRACE) --out $(or $(OUT),var/log.md)
+
+export-logs: ## exporta TODAS as conversas do banco: um .md por conversa e um index.md. DB=var/autoseguro.db OUT=var/logs
+	$(BIN)/python tools/export_log.py --db $(or $(DB),var/autoseguro.db) --trace all --out $(or $(OUT),var/logs)
+
+probe-seed: ## confere uma QUOTE_SEED contra a API que acabou de subir (porta 8000), SEM LLM: SEED=91 [N=8] [PORT=8000]
+	$(BIN)/python tools/probe_seed.py --seed $(SEED) --port $(or $(PORT),8000) --n $(or $(N),8)
 
 verify-clean: ## prova num container python:3.12 LIMPO: git archive + pip install do pyproject + testes. REV=HEAD|--worktree  EXTRAS=dev,llm|dev (dev = so o nucleo, sem o SDK da Anthropic)
 	tools/verify_clean.sh $(or $(REV),HEAD) $(or $(EXTRAS),dev,llm)

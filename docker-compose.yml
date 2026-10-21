@@ -10,7 +10,9 @@ services:
       QUOTE_FAILURE_RATE: "0.20"
       QUOTE_SLOW_RATE: "0.10"
       QUOTE_SLOW_SECONDS: "8"
-      # QUOTE_SEED: "42"   # descomente p/ falhas reproduziveis
+      # Falhas REPRODUZIVEIS: `QUOTE_SEED=91 make api-up`. Sem a variavel, a sequencia e aleatoria. A sequencia recomeca a cada subida da API
+      # (`make api-down && QUOTE_SEED=... make api-up`). Sementes ja conferidas: README, "Como rodar com LLM real".
+      QUOTE_SEED: "${QUOTE_SEED:-}"
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=2)"]
       interval: 3s
