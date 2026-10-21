@@ -318,9 +318,7 @@ class Orchestrator:
                           detail=f"midia_repetida:{kind}", meta={"reply_source": "template_state", "media": kind})
             return
         nq = self._next(conv)
-        text = templates.media_request(kind, nq.text if nq else None)
-        if not conv.spoke:
-            text = f"{templates.GREETING} {text}"
+        text = templates.media_request(kind, nq.text if nq else None)      # a apresentacao da 1a resposta entra em `_say`
         conv.asked = (nq.slot, nq.kind) if nq else None
         self._say(t, "question" if nq else "text", text, meta={"reply_source": "template_media", "media": kind, **({"asked": [nq.slot, nq.kind]} if nq else {})})
 
@@ -707,6 +705,8 @@ class Orchestrator:
     # --- registro -------------------------------------------------------------------------------------------------------------------------------
     def _say(self, t: _Turn, kind: str, text: str, *, quote_id: str | None = None, meta: Mapping[str, Any] | None = None, terminal: bool = True) -> Out:
         mid = self._ids.new("msg")
+        if terminal and not t.conv.spoke:
+            text = _introduced(text)                    # a 1a resposta do agente SEMPRE diz que e a assistente virtual, seja qual for o texto (do modelo ou de template)
         self._store.add_message(t.trace, mid, role="agent", kind=kind, text=text, ts=utc_now(), status="sent", quote_id=quote_id, meta={**t.extra, **(meta or {})})
         if terminal:
             t.conv.spoke = True
@@ -747,6 +747,19 @@ class Orchestrator:
                 break
             out.append(Out(m["kind"], m["text"], m["id"], m["kind"] != "hold"))
         return tuple(out)
+
+
+_LEADING_GREETING = re.compile(r"^(?:ol[áa]|oi|opa|e a[ií]|bom dia|boa tarde|boa noite)\b[!,.\s]*", re.IGNORECASE)
+
+
+def _introduced(text: str) -> str:
+    """A primeira resposta do agente comeca com "Olá! Sou a assistente virtual da AutoSeguro." Se o texto ja se apresenta como assistente virtual (o mock, o audio), nada muda; se o modelo
+    abriu com a propria saudacao ("Olá! Tudo bem? …"), ela e trocada por esta, para nao haver dois "Olá"."""
+    if "assistente virtual" in strip_accents(text).lower():
+        return text
+    body = _LEADING_GREETING.sub("", text.lstrip(), count=1)
+    body = body[:1].upper() + body[1:]
+    return f"{templates.GREETING} {body}".rstrip()
 
 
 def _asks(slot: str, text: str) -> bool:

@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from autoseguro import cli
+from autoseguro import cli, templates
 from autoseguro.cli import build_orchestrator, fetch_planos, main, make_llm_for
 from autoseguro.facts import FactBase
 from autoseguro.llm.guarded import GuardedLLM
@@ -99,7 +99,7 @@ def test_the_real_llm_path_is_the_same_orchestrator_and_masks_before_the_provide
         assert isinstance(orc._llm, GuardedLLM) and isinstance(orc._llm.inner, ThrottledLLM) and info["llm"] == "openai_compat/fornecedor/modelo"
         trace = orc.start()
         r = orc.handle(trace, f"oi, sou a Maria Silva, meu cpf é {V['cpf']} e meu email é {V['email']}")
-        assert r.terminal[0].text == "Olá! Qual é o ano do modelo do seu carro?" and r.status == "open"
+        assert r.terminal[0].text == f"{templates.GREETING} Qual é o ano do modelo do seu carro?" and r.status == "open"
         sent = json.dumps(llm_srv.requests[0]["body"], ensure_ascii=False)
         for raw in (V["cpf"], V["email"], "Maria"):
             assert raw not in sent and raw not in store.all_text()

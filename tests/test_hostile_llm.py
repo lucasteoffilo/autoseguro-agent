@@ -108,9 +108,14 @@ def test_the_hardening_costs_one_good_reply_of_the_39_the_real_model_wrote_on_ne
     assert newly_blocked == [("m01_saudacao_pergunta_preco", 2)], newly_blocked
 
 
-@pytest.mark.parametrize("reply", ["Anotado! Qual é o ano do modelo do seu carro?", "Perfeito, obrigada! Me passa o ano do modelo do carro?", "Entendi. Qual é o ano do carro?",
-                                   "Ótimo! Para começar, qual é o ano do modelo do seu carro?", "Oi! Tudo bem? Para começar, qual é o ano do seu carro?"])
-def test_ordinary_friendly_replies_still_go_through_untouched(reply):
+@pytest.mark.parametrize("reply,shown", [
+    ("Anotado! Qual é o ano do modelo do seu carro?", "Anotado! Qual é o ano do modelo do seu carro?"),
+    ("Perfeito, obrigada! Me passa o ano do modelo do carro?", "Perfeito, obrigada! Me passa o ano do modelo do carro?"),
+    ("Entendi. Qual é o ano do carro?", "Entendi. Qual é o ano do carro?"),
+    ("Ótimo! Para começar, qual é o ano do modelo do seu carro?", "Ótimo! Para começar, qual é o ano do modelo do seu carro?"),
+    ("Oi! Tudo bem? Para começar, qual é o ano do seu carro?", "Tudo bem? Para começar, qual é o ano do seu carro?")])   # a saudacao do modelo cede a da casa
+def test_ordinary_friendly_replies_still_go_through_untouched(reply, shown):
+    """Intactas = o que o modelo escreveu segue valendo; so a primeira resposta ganha a apresentacao da casa na frente (e perde a saudacao propria)."""
     h = Harness(llm=ScriptedLLM(reply_json(reply)))
     h.say(GREET)
-    assert h.agent[0]["text"] == reply and h.meta(h.agent[0])["reply_source"] == "llm"
+    assert h.agent[0]["text"] == f"{templates.GREETING} {shown}" and h.meta(h.agent[0])["reply_source"] == "llm"
