@@ -38,6 +38,7 @@ make chat ARGS="--llm real --db var/demo.db"    # conversa interativa; com --scr
 | `evals/`, `tools/evals.py` | Os critérios C1 a C5 (D9) com 35 cenários sintéticos e 2.500 conversas derivadas do dataset, e `results/` |
 | `tools/` | `llm_ping`, `smoke_llm`, `export_log`, `probe_seed`, `scenarios.py`, `verify_clean.sh` (prova num container limpo) |
 | `docs/` | `PLAN.md` (roteiro e critérios), `DEMO.md` (cenários), `FINDINGS.md` (achados da API e do dataset), `BACKLOG.md` (o que ficou de fora de propósito) |
+| `ai-logs/` | As sessões do Claude Code usadas no desafio, escolhidas pelo autor, redigidas, com `INDEX.md` (`tools/export_ai_logs.py`) |
 | `analysis/` | Simulações de latência e custo (só agregados) e `results/` |
 | `vendor/` | **Tudo que veio do desafio**, sem modificação ([`NOTICE.md`](NOTICE.md)). O resto do repo é autoral |
 
@@ -77,6 +78,8 @@ make export-logs DB=var/demo.db OUT=var/demo   # um .md por conversa + index.md,
 O dataset do desafio **não está neste repo** (higiene: nenhuma linha dele entra aqui). Sem ele, `make test` pula 2 testes com o motivo (`DATASET_PATH ausente`) e `make evals` roda só os cenários sintéticos; para a população inteira, aponte `DATASET_PATH` para o `conversations.parquet` (o padrão do `Makefile` é `../namastex-fde-challenge/dataset/conversations.parquet`).
 
 `make smoke-llm-dry` roda o `smoke-llm` com um LLM de mentira (sem chave, sem rede).
+
+**Logs de IA** (`ai-logs/`). `make ai-logs-list` lista as sessões do Claude Code (id, início, fim, mensagens, tamanho, primeiro pedido); `make ai-logs IDS="id1 id2"` copia **só** esses ids, redige o caminho de home, o nome de usuário do sistema e todo e-mail, e refaz o `INDEX.md` (o que foi redigido, o que foi excluído e por quê). Segredo ou PII que sobrar (chaves, Bearer, CPF, telefone, placa) **para a cópia** daquela sessão com exit 3, dizendo o tipo e a linha, nunca o trecho; `--redact "texto"` redige um literal. A mesma varredura roda como teste sobre `ai-logs/**` (`tests/test_ai_logs.py`).
 
 **Antes de gastar a cota, `make llm-ping`**: uma única requisição real que confere a autenticação, se o OpenRouter aceita o pedido como montado (`json_schema` + `require_parameters`), se o modelo devolve saída válida e a latência dessa amostra; confirma que a chave está setada sem mostrar valor, prefixo nem tamanho.
 Depois `make smoke-llm`: gasta **31 requisições** (1 aquecimento + 15 mensagens × 2 repetições), respeita 20 por minuto, conta cada chamada em `var/smoke/quota.jsonl` e aborta antes de gastar se a cota não cobrir. O limite diário é o que o **provedor informa** em `GET /key` (50 abaixo de 10 créditos comprados, 1000 a partir de 10), com 50 de fallback. **Falha rápido:** o primeiro erro de protocolo (qualquer 4xx fora 408 e 429: 400, 401, 402, 403, 404…) aborta na hora e custa uma requisição, não 31; só o 429 por minuto e as falhas do serviço (408, 5xx) entram em backoff, e três chamadas seguidas que ainda falham depois dele abortam também. `make smoke-llm-anthropic` é o mesmo smoke pela API direta da Anthropic (opcional).

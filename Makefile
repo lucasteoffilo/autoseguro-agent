@@ -53,6 +53,12 @@ export-log: ## exporta o log de UMA conversa em Markdown (transcricao, decisoes,
 export-logs: ## exporta TODAS as conversas do banco: um .md por conversa e um index.md. DB=var/autoseguro.db OUT=var/logs
 	$(BIN)/python tools/export_log.py --db $(or $(DB),var/autoseguro.db) --trace all --out $(or $(OUT),var/logs)
 
+ai-logs-list: ## lista as sessoes do Claude Code (id, inicio, fim, mensagens, tamanho, primeiro pedido) para voce escolher quais entram em ai-logs/
+	$(BIN)/python tools/export_ai_logs.py --list
+
+ai-logs: ## copia SO as sessoes que voce passar para ai-logs/, redigidas, e refaz o INDEX.md. IDS="id1 id2" [ARGS='--redact "texto"']
+	$(BIN)/python tools/export_ai_logs.py $(IDS) $(ARGS)
+
 probe-seed: ## confere uma QUOTE_SEED contra a API que acabou de subir (porta 8000), SEM LLM: SEED=91 [N=8] [PORT=8000]
 	$(BIN)/python tools/probe_seed.py --seed $(SEED) --port $(or $(PORT),8000) --n $(or $(N),8)
 
