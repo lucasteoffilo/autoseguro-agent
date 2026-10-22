@@ -328,6 +328,14 @@ Dito sem rodeio. Não são promessas; o [`docs/BACKLOG.md`](docs/BACKLOG.md) tem
 
 **Adiado de propósito (BACKLOG):** consulta de endpoints no `llm-ping` quando o 404 vier genérico; separar `json_schema` de `require_parameters`; lista de permissão para o texto do modelo; limitador de taxa configurável por modelo; seção do export com os textos trocados por desenho; `blocked_reply` no caminho de risco; variantes de template; ajuste do 7b; gravar o texto do modelo trocado na abertura.
 
+## Como usei IA neste desafio
+
+Usei o Claude Code como executor da implementação: ele escreveu a maior parte do código e dos testes, sob critérios de aceite que eu fixei (preço só sai da API, handoff com motivo explícito, falhar de forma segura) e com escopo que eu cortei (variantes de template, lista de permissão e webhook ficaram no BACKLOG).
+Duas decisões mudaram por dado, não por opinião: o hedging foi descartado depois de simular a latência das três políticas (D1), e o critério do smoke saiu do modelo cru e foi para o sistema, porque a ancoragem de slots passou a ser quem garante o preço (D7).
+Não aceitei resumos: pedi transcrições, a saída dos testes, o código do cliente da `/quote` inteiro e controles negativos (cada garantia foi desligada de propósito para ver o teste reprovar). Isso pegou erros reais, entre eles um guardrail que deixava passar 73% das frases hostis e um modelo que rotulava "sim, pode mostrar" como objeção de preço.
+As rodadas com o LLM real tiveram limite de requisições, execução de cada cenário uma única vez e parada no primeiro erro de protocolo. O modelo gratuito usado é um preview, e o mock é o caminho reproduzível.
+As sessões de desenvolvimento estão em `ai-logs/`, com `INDEX.md`; foram redigidos caminhos de home, e-mails, linhas do dataset e chaves e CPFs sintéticos de teste, sempre com marcador visível
+
 ## Dados sensíveis
 
 O dataset do desafio é sintético, mas é tratado como sensível. Ele não é copiado para este repositório (o caminho vem de
