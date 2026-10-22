@@ -171,10 +171,12 @@ def test_a_neutral_reply_without_a_question_is_replaced_too():
     assert h.say("meu carro é 2019").terminal[0].text == f"{HELLO}Anotado: modelo 2019. {questions.ask('idade')}"
 
 
-def test_a_neutral_llm_reply_that_asks_the_next_data_is_used_as_is():
-    h = Harness()
+def test_a_neutral_llm_reply_that_asks_the_pending_data_is_used_as_is_after_the_opening():
+    h = Harness(llm=ScriptedLLM(reply_json("Qual é o ano do modelo do seu carro?"), reply_json("Sem pressa! Qual é o ano do modelo do seu carro?")))
     h.say(GREET)
-    assert h.agent[0]["text"].startswith("Olá!") and h.meta(h.agent[0])["reply_source"] == "llm" and h.meta(h.agent[0])["facts_used"] == []
+    h.say("hm, deixa eu ver o documento")
+    assert h.meta(h.agent[0])["reply_source"] == "template_opening" and h.agent[0]["text"] == HELLO + questions.ask("veiculo_ano")
+    assert h.agent[1]["text"] == "Sem pressa! Qual é o ano do modelo do seu carro?" and h.meta(h.agent[1])["reply_source"] == "llm" and h.meta(h.agent[1])["facts_used"] == []
 
 
 def test_every_message_quote_and_attempt_has_an_id_and_a_status_tied_by_trace_id():
@@ -618,7 +620,7 @@ def test_a_service_failure_gets_one_retry_and_then_a_handoff(kind):
 def test_a_service_failure_that_clears_on_the_retry_is_a_normal_turn():
     h = Harness(failures=["http_503", None])
     r = h.say("oi")
-    assert r.terminal[0].kind == "text" and h.meta(h.agent[0])["attempt"] == 2 and h.conv["handoff_reason"] is None
+    assert r.terminal[0].kind == "question" and h.meta(h.agent[0])["attempt"] == 2 and h.conv["handoff_reason"] is None
 
 
 def test_invalid_output_twice_in_a_row_is_a_safety_guard_on_the_llm():
@@ -633,8 +635,8 @@ def test_invalid_output_twice_in_a_row_is_a_safety_guard_on_the_llm():
 def test_cf_i_filtered_once_and_ok_on_the_retry_is_a_normal_turn_with_one_retry_recorded():
     h = Harness(failures=["content_filter"])
     r = h.say("oi")
-    assert len(h.llm.calls) == 2 and r.terminal[0].kind == "text" and r.terminal[0].text.startswith("Olá!")
-    assert h.meta(h.agent[0])["attempt"] == 2 and h.meta(h.agent[0])["reply_source"] == "llm"
+    assert len(h.llm.calls) == 2 and r.terminal[0].kind == "question" and r.terminal[0].text == HELLO + questions.ask("veiculo_ano")
+    assert h.meta(h.agent[0])["attempt"] == 2 and h.meta(h.agent[0])["reply_source"] == "template_opening"
 
 
 def test_cf_ii_filtered_twice_answers_the_pending_question_by_template_and_changes_no_slot():

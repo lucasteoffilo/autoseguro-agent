@@ -631,13 +631,11 @@ class Orchestrator:
         source, kind, text = reply.source, "text", reply.text
         if source == "llm":
             asked_ok = nq is not None and nq.kind == "ask" and nq.slot != "necessidade" and _asks(nq.slot, text)
-            if asked_ok and not conv.spoke and text.count("?") != 1:
-                asked_ok = False                         # abertura: o texto do modelo so vale com UMA pergunta, a do produto ("Tudo bem? Qual e o ano?" e pergunta sem resposta); senao e a apresentacao e a pergunta do template
             clean = not self._masker.mask(text).kinds and not residual_pii(text)       # o que o modelo escreve tambem passa pelo mascarador
             if nq is None:
                 text, source = templates.AFTER_QUOTE, "template_state"
-            elif echo or not (asked_ok and clean):       # eco, confirmacao e pergunta de necessidade sao do produto, nao do modelo (D6)
-                text, source = nq.text, ("template_echo" if echo else "template_question")
+            elif echo or not conv.spoke or not (asked_ok and clean):       # eco, confirmacao, pergunta de necessidade e a ABERTURA sao do produto, nao do modelo (D6, D11)
+                text, source = nq.text, ("template_echo" if echo else "template_opening" if not conv.spoke else "template_question")
                 kind = "confirmation" if nq.kind == "confirm" else "question"
         elif source == "template_fallback":
             if nq is None:
@@ -724,7 +722,7 @@ class Orchestrator:
     def _say(self, t: _Turn, kind: str, text: str, *, quote_id: str | None = None, meta: Mapping[str, Any] | None = None, terminal: bool = True) -> Out:
         mid = self._ids.new("msg")
         if terminal and not t.conv.spoke:
-            text = _introduced(text)                    # a 1a resposta do agente SEMPRE diz que e a assistente virtual, seja qual for o texto (do modelo ou de template)
+            text = f"{templates.GREETING} {text}"       # a 1a resposta do agente SEMPRE diz que e a assistente virtual (a abertura e template: nunca ha uma saudacao do modelo para duplicar)
         self._store.add_message(t.trace, mid, role="agent", kind=kind, text=text, ts=utc_now(), status="sent", quote_id=quote_id, meta={**t.extra, **(meta or {})})
         if terminal:
             t.conv.spoke = True
@@ -767,19 +765,6 @@ class Orchestrator:
                 break
             out.append(Out(m["kind"], m["text"], m["id"], m["kind"] != "hold"))
         return tuple(out)
-
-
-_LEADING_GREETING = re.compile(r"^(?:ol[áa]|oi|opa|e a[ií]|bom dia|boa tarde|boa noite)\b[!,.\s]*", re.IGNORECASE)
-
-
-def _introduced(text: str) -> str:
-    """A primeira resposta do agente comeca com "Olá! Sou a assistente virtual da AutoSeguro." Se o texto ja se apresenta como assistente virtual (o mock, o audio), nada muda; se o modelo
-    abriu com a propria saudacao ("Olá! Tudo bem? …"), ela e trocada por esta, para nao haver dois "Olá"."""
-    if "assistente virtual" in strip_accents(text).lower():
-        return text
-    body = _LEADING_GREETING.sub("", text.lstrip(), count=1)
-    body = body[:1].upper() + body[1:]
-    return f"{templates.GREETING} {body}".rstrip()
 
 
 def _asks(slot: str, text: str) -> bool:

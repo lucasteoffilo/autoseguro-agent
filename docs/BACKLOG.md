@@ -30,8 +30,8 @@ O que ficou de fora **de propósito**. Não são promessas: cada item diz por qu
 
 5. **Seção do export com os textos do modelo trocados por desenho.**
    Hoje a tabela de barrados lista só o que o modelo poderia ter conduzido; os textos que o guardrail marcou em turnos que o produto troca por desenho (pergunta de necessidade, confirmação, eco) só existem no banco (`meta.blocked_reply`). Na 2ª rodada do DEMO foram 7 textos, e para julgá-los foi preciso consultar o banco. Uma seção "Texto do modelo trocado por desenho, marcado pelo guardrail" no export os traria.
-   Vale também para o texto que o modelo escreveu na abertura e a regra da única pergunta trocou (`template_question`): ele não é gravado, e na 3ª rodada as 3 aberturas foram trocadas sem que se possa ler o que o modelo havia escrito.
-   *Por que ficou de fora:* o número já respondeu o que ele existia para responder: o texto do modelo que chega ao lead é só a abertura. *Vale fazer se:* o texto do modelo voltar a conduzir turnos além da abertura, ou se alguém precisar auditar o que o modelo escreve nas aberturas.
+   Vale também para o texto que o modelo escreve na abertura: ele é descartado sempre (a abertura é template) e não é gravado, então não dá para ler o que o modelo teria dito.
+   *Por que ficou de fora:* o número já respondeu o que ele existia para responder: a abertura é template e, nas três últimas rodadas reais, nenhum texto do modelo chegou ao lead no resto da conversa. *Vale fazer se:* o texto do modelo voltar a conduzir turnos, ou se alguém precisar auditar o que o modelo escreve nas aberturas.
 
 6. **Gravar `blocked_reply` também no caminho de risco.**
    Nas intenções de risco o texto do modelo é sempre substituído por template, e quando o guardrail o marca (por exemplo `R1_dinheiro` na oferta de plano mais barato do cenário 4) o texto barrado não é gravado, só a regra. Não dá para julgar se foi falso positivo.
@@ -46,7 +46,3 @@ O que ficou de fora **de propósito**. Não são promessas: cada item diz por qu
 8. **Reescrever o 7b e o desfecho esperado.**
    Na 3ª rodada o modelo real rotulou dois dos quatro pedidos do 7b como `out_of_scope` e a 2ª recusa seguida virou handoff, de modo que o (d) nunca chegou ao modelo. A regra de preço antes de dados (D8) tirou (b) e (c) desse caminho e a execução final o exerce de novo, mas o DEMO ainda descreve o 7b como "volta à pergunta do produto" para as quatro. Se a execução final mostrar outro desfecho seguro (por exemplo, handoff `OUT_OF_SCOPE` por recusas de escopo seguidas), o texto do DEMO deve acompanhá-lo, e o (d) pode virar um 7c separado.
    *Por que ficou de fora:* não bloqueia o envio; a defesa já foi medida (nada vazou nas duas rodadas).
-
-9. **A abertura do modelo deve ter a pergunta do produto como a única pergunta.**
-   A regra "uma única pergunta, a do produto" confere que o texto tem um `?` e que cita o ano do modelo em algum lugar, não que o `?` seja da pergunta do produto. Na execução final, a abertura do cenário 6 passou: "Tudo bem? Para te dar uma cotação, preciso do ano do modelo do seu carro." (o único `?` é o do "Tudo bem?", e o pedido do ano é uma afirmação). Conferir o tópico só dentro da frase que termina em `?` fecha isso. Outro defeito pequeno da mesma execução: "Olá! Sou a assistente virtual da AutoSeguro. Bem-vindo à AutoSeguro." (a abertura do cenário 1) repete a casa.
-   *Por que ficou de fora:* é naturalidade, não segurança (nada de preço, desconto ou promessa passa por aí), e a execução final já estava rodada. *Vale fazer se:* a repetição incomodar na leitura do log.

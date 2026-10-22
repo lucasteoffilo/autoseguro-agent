@@ -3,7 +3,7 @@
 #### `cotacao-essencial` — quoted
 
 - **lead** › oi
-- **agente** [text] › Olá! Sou a assistente virtual da AutoSeguro. Qual é o ano do modelo do seu carro?
+- **agente** [question] › Olá! Sou a assistente virtual da AutoSeguro. Qual é o ano do modelo do seu carro?
 - **lead** › é um onix 2019, tenho 34 anos e moro no cep 30130-010
 - **agente** [question] › Anotado: modelo 2019, 34 anos e CEP 30130-010. O que você quer cobrir? Só colisão, roubo e furto; também danos a terceiros e vidros; ou também carro reserva e assistência 24h?
 - **lead** › só roubo e colisão
@@ -20,7 +20,7 @@
 #### `cotacao-completo` — quoted
 
 - **lead** › oi
-- **agente** [text] › Olá! Sou a assistente virtual da AutoSeguro. Qual é o ano do modelo do seu carro?
+- **agente** [question] › Olá! Sou a assistente virtual da AutoSeguro. Qual é o ano do modelo do seu carro?
 - **lead** › é um onix 2019, tenho 34 anos e moro no cep 30130-010
 - **agente** [question] › Anotado: modelo 2019, 34 anos e CEP 30130-010. O que você quer cobrir? Só colisão, roubo e furto; também danos a terceiros e vidros; ou também carro reserva e assistência 24h?
 - **lead** › quero cobrir terceiros e vidros também
@@ -37,7 +37,7 @@
 #### `cotacao-premium` — quoted
 
 - **lead** › oi
-- **agente** [text] › Olá! Sou a assistente virtual da AutoSeguro. Qual é o ano do modelo do seu carro?
+- **agente** [question] › Olá! Sou a assistente virtual da AutoSeguro. Qual é o ano do modelo do seu carro?
 - **lead** › é um onix 2019, tenho 34 anos e moro no cep 30130-010
 - **agente** [question] › Anotado: modelo 2019, 34 anos e CEP 30130-010. O que você quer cobrir? Só colisão, roubo e furto; também danos a terceiros e vidros; ou também carro reserva e assistência 24h?
 - **lead** › quero carro reserva e assistência 24h, a completa
@@ -54,7 +54,7 @@
 #### `cotacao-pro-rata` — quoted
 
 - **lead** › oi
-- **agente** [text] › Olá! Sou a assistente virtual da AutoSeguro. Qual é o ano do modelo do seu carro?
+- **agente** [question] › Olá! Sou a assistente virtual da AutoSeguro. Qual é o ano do modelo do seu carro?
 - **lead** › é um onix 2019, tenho 34 anos e moro no cep 30130-010
 - **agente** [question] › Anotado: modelo 2019, 34 anos e CEP 30130-010. O que você quer cobrir? Só colisão, roubo e furto; também danos a terceiros e vidros; ou também carro reserva e assistência 24h?
 - **lead** › só roubo e colisão
@@ -85,7 +85,7 @@
 #### `cotacao-com-correcao-que-recusa` — refused
 
 - **lead** › oi
-- **agente** [text] › Olá! Sou a assistente virtual da AutoSeguro. Qual é o ano do modelo do seu carro?
+- **agente** [question] › Olá! Sou a assistente virtual da AutoSeguro. Qual é o ano do modelo do seu carro?
 - **lead** › é um onix 2019, tenho 34 anos e moro no cep 30130-010
 - **agente** [question] › Anotado: modelo 2019, 34 anos e CEP 30130-010. O que você quer cobrir? Só colisão, roubo e furto; também danos a terceiros e vidros; ou também carro reserva e assistência 24h?
 - **lead** › só roubo e colisão
@@ -106,7 +106,7 @@
 #### `cotacao-duvida-de-cobertura-no-meio` — quoted
 
 - **lead** › oi
-- **agente** [text] › Olá! Sou a assistente virtual da AutoSeguro. Qual é o ano do modelo do seu carro?
+- **agente** [question] › Olá! Sou a assistente virtual da AutoSeguro. Qual é o ano do modelo do seu carro?
 - **lead** › e a carência, como funciona?
 - **agente** [text] › Roubo e furto só passam a valer 30 dias depois do início da vigência (carência). Qual é o ano do modelo do seu carro?
 - **lead** › é um onix 2019, tenho 34 anos e moro no cep 30130-010
@@ -125,7 +125,7 @@
 #### `cotacao-midia-no-meio` — quoted
 
 - **lead** › oi
-- **agente** [text] › Olá! Sou a assistente virtual da AutoSeguro. Qual é o ano do modelo do seu carro?
+- **agente** [question] › Olá! Sou a assistente virtual da AutoSeguro. Qual é o ano do modelo do seu carro?
 - **lead** › [audio] mensagem de voz (9s)
 - **agente** [question] › Por aqui eu só leio mensagens de texto, então não consegui abrir o seu áudio. Qual é o ano do modelo do seu carro?
 - **lead** › é um onix 2019, tenho 34 anos e moro no cep 30130-010
@@ -144,7 +144,7 @@
 #### `recusa-carro-velho` — refused
 
 - **lead** › oi
-- **agente** [text] › Olá! Sou a assistente virtual da AutoSeguro. Qual é o ano do modelo do seu carro?
+- **agente** [question] › Olá! Sou a assistente virtual da AutoSeguro. Qual é o ano do modelo do seu carro?
 - **lead** › é um fusca 1998, tenho 45 anos e moro no cep 01310-100
 - **agente** [refusal] › Não consigo cotar este perfil: a seguradora não aceita veículos com mais de 20 anos.
   Dados usados: modelo 1998 e 45 anos.
@@ -153,7 +153,7 @@
 #### `recusa-idade-acima` — refused
 
 - **lead** › oi
-- **agente** [text] › Olá! Sou a assistente virtual da AutoSeguro. Qual é o ano do modelo do seu carro?
+- **agente** [question] › Olá! Sou a assistente virtual da AutoSeguro. Qual é o ano do modelo do seu carro?
 - **lead** › é um onix 2019, tenho 80 anos e moro no cep 01310-100
 - **agente** [refusal] › Não consigo cotar este perfil: a seguradora só aceita motoristas de até 75 anos.
   Dados usados: modelo 2019 e 80 anos.
@@ -162,7 +162,7 @@
 #### `recusa-menor-de-idade` — refused
 
 - **lead** › oi
-- **agente** [text] › Olá! Sou a assistente virtual da AutoSeguro. Qual é o ano do modelo do seu carro?
+- **agente** [question] › Olá! Sou a assistente virtual da AutoSeguro. Qual é o ano do modelo do seu carro?
 - **lead** › é um onix 2019, tenho 17 anos e moro no cep 01310-100
 - **agente** [refusal] › Não consigo cotar este perfil: a idade informada está fora da faixa que a seguradora aceita (de 18 a 75 anos).
   Dados usados: modelo 2019 e 17 anos.
@@ -171,7 +171,7 @@
 #### `borda-aceita-75-anos-e-carro-de-20` — quoted
 
 - **lead** › oi
-- **agente** [text] › Olá! Sou a assistente virtual da AutoSeguro. Qual é o ano do modelo do seu carro?
+- **agente** [question] › Olá! Sou a assistente virtual da AutoSeguro. Qual é o ano do modelo do seu carro?
 - **lead** › é um gol 2006, tenho 75 anos e moro no cep 30130-010
 - **agente** [question] › Anotado: modelo 2006, 75 anos e CEP 30130-010. O que você quer cobrir? Só colisão, roubo e furto; também danos a terceiros e vidros; ou também carro reserva e assistência 24h?
 - **lead** › só roubo e colisão
@@ -188,7 +188,7 @@
 #### `borda-recusada-76-anos` — refused
 
 - **lead** › oi
-- **agente** [text] › Olá! Sou a assistente virtual da AutoSeguro. Qual é o ano do modelo do seu carro?
+- **agente** [question] › Olá! Sou a assistente virtual da AutoSeguro. Qual é o ano do modelo do seu carro?
 - **lead** › é um onix 2019, tenho 76 anos e moro no cep 30130-010
 - **agente** [refusal] › Não consigo cotar este perfil: a seguradora só aceita motoristas de até 75 anos.
   Dados usados: modelo 2019 e 76 anos.
@@ -197,7 +197,7 @@
 #### `borda-recusada-carro-de-21` — refused
 
 - **lead** › oi
-- **agente** [text] › Olá! Sou a assistente virtual da AutoSeguro. Qual é o ano do modelo do seu carro?
+- **agente** [question] › Olá! Sou a assistente virtual da AutoSeguro. Qual é o ano do modelo do seu carro?
 - **lead** › é um gol 2005, tenho 40 anos e moro no cep 30130-010
 - **agente** [refusal] › Não consigo cotar este perfil: a seguradora não aceita veículos com mais de 20 anos.
   Dados usados: modelo 2005 e 40 anos.
@@ -206,7 +206,7 @@
 #### `borda-aceita-18-anos` — quoted
 
 - **lead** › oi
-- **agente** [text] › Olá! Sou a assistente virtual da AutoSeguro. Qual é o ano do modelo do seu carro?
+- **agente** [question] › Olá! Sou a assistente virtual da AutoSeguro. Qual é o ano do modelo do seu carro?
 - **lead** › é um onix 2019, tenho 18 anos e moro no cep 30130-010
 - **agente** [question] › Anotado: modelo 2019, 18 anos e CEP 30130-010. O que você quer cobrir? Só colisão, roubo e furto; também danos a terceiros e vidros; ou também carro reserva e assistência 24h?
 - **lead** › só roubo e colisão
@@ -223,7 +223,7 @@
 #### `handoff-quote-unavailable` — handoff:QUOTE_UNAVAILABLE (attempts_exhausted:connection)
 
 - **lead** › oi
-- **agente** [text] › Olá! Sou a assistente virtual da AutoSeguro. Qual é o ano do modelo do seu carro?
+- **agente** [question] › Olá! Sou a assistente virtual da AutoSeguro. Qual é o ano do modelo do seu carro?
 - **lead** › é um onix 2019, tenho 34 anos e moro no cep 30130-010
 - **agente** [question] › Anotado: modelo 2019, 34 anos e CEP 30130-010. O que você quer cobrir? Só colisão, roubo e furto; também danos a terceiros e vidros; ou também carro reserva e assistência 24h?
 - **lead** › só roubo e colisão
@@ -235,7 +235,7 @@
 #### `handoff-quote-unavailable-na-pre-checagem` — handoff:QUOTE_UNAVAILABLE (precheck:attempts_exhausted:connection)
 
 - **lead** › oi
-- **agente** [text] › Olá! Sou a assistente virtual da AutoSeguro. Qual é o ano do modelo do seu carro?
+- **agente** [question] › Olá! Sou a assistente virtual da AutoSeguro. Qual é o ano do modelo do seu carro?
 - **lead** › é um fusca 1998, tenho 45 anos e moro no cep 01310-100
 - **agente** [hold] › Um instante, estou calculando a sua cotação.
 - **agente** [handoff] › Não consegui gerar a sua cotação agora: o sistema que calcula os valores está instável. Como só passo valores que esse sistema confirma, prefiro não estimar nenhum preço. Um consultor vai dar continuidade à sua conversa, e o que você me contou ficou registrado.
@@ -243,14 +243,14 @@
 #### `handoff-human-requested` — handoff:HUMAN_REQUESTED
 
 - **lead** › oi
-- **agente** [text] › Olá! Sou a assistente virtual da AutoSeguro. Qual é o ano do modelo do seu carro?
+- **agente** [question] › Olá! Sou a assistente virtual da AutoSeguro. Qual é o ano do modelo do seu carro?
 - **lead** › prefiro falar com uma pessoa
 - **agente** [handoff] › Claro. Um consultor vai dar continuidade à sua conversa, e o que você me contou ficou registrado.
 
 #### `handoff-human-requested-no-meio` — handoff:HUMAN_REQUESTED
 
 - **lead** › oi
-- **agente** [text] › Olá! Sou a assistente virtual da AutoSeguro. Qual é o ano do modelo do seu carro?
+- **agente** [question] › Olá! Sou a assistente virtual da AutoSeguro. Qual é o ano do modelo do seu carro?
 - **lead** › é um onix 2019, tenho 34 anos e moro no cep 30130-010
 - **agente** [question] › Anotado: modelo 2019, 34 anos e CEP 30130-010. O que você quer cobrir? Só colisão, roubo e furto; também danos a terceiros e vidros; ou também carro reserva e assistência 24h?
 - **lead** › quero falar com um atendente
@@ -259,35 +259,35 @@
 #### `handoff-complaint` — handoff:COMPLAINT
 
 - **lead** › oi
-- **agente** [text] › Olá! Sou a assistente virtual da AutoSeguro. Qual é o ano do modelo do seu carro?
+- **agente** [question] › Olá! Sou a assistente virtual da AutoSeguro. Qual é o ano do modelo do seu carro?
 - **lead** › isso é um absurdo, quero fazer uma reclamação
 - **agente** [handoff] › Sinto muito pela experiência. Um consultor vai dar continuidade à sua conversa, e o que você me contou ficou registrado.
 
 #### `handoff-claim-sinistro` — handoff:CLAIM_SINISTRO
 
 - **lead** › oi
-- **agente** [text] › Olá! Sou a assistente virtual da AutoSeguro. Qual é o ano do modelo do seu carro?
+- **agente** [question] › Olá! Sou a assistente virtual da AutoSeguro. Qual é o ano do modelo do seu carro?
 - **lead** › bati o carro ontem e preciso acionar o seguro
 - **agente** [handoff] › Sinto muito pelo que aconteceu. Acionar o seguro (sinistro) não é comigo: eu só faço cotação. Um consultor vai dar continuidade à sua conversa, e o que você me contou ficou registrado.
 
 #### `handoff-cancellation` — handoff:CANCELLATION
 
 - **lead** › oi
-- **agente** [text] › Olá! Sou a assistente virtual da AutoSeguro. Qual é o ano do modelo do seu carro?
+- **agente** [question] › Olá! Sou a assistente virtual da AutoSeguro. Qual é o ano do modelo do seu carro?
 - **lead** › quero cancelar o meu seguro
 - **agente** [handoff] › Entendi que você quer cancelar. Cancelamento não é comigo: eu só faço cotação. Um consultor vai dar continuidade à sua conversa, e o que você me contou ficou registrado.
 
 #### `handoff-data-ambiguous-ano-futuro` — handoff:DATA_AMBIGUOUS (entrada_invalida:veiculo_ano:ano_modelo_futuro)
 
 - **lead** › oi
-- **agente** [text] › Olá! Sou a assistente virtual da AutoSeguro. Qual é o ano do modelo do seu carro?
+- **agente** [question] › Olá! Sou a assistente virtual da AutoSeguro. Qual é o ano do modelo do seu carro?
 - **lead** › é um carro 2027, tenho 34 anos e moro no cep 30130-010
 - **agente** [handoff] › Não consegui confirmar os seus dados para montar a cotação. Um consultor vai dar continuidade à sua conversa, e o que você me contou ficou registrado.
 
 #### `handoff-data-ambiguous-confirmacao-sem-resposta` — handoff:DATA_AMBIGUOUS (confirmacao_sem_resposta:veiculo_ano)
 
 - **lead** › oi
-- **agente** [text] › Olá! Sou a assistente virtual da AutoSeguro. Qual é o ano do modelo do seu carro?
+- **agente** [question] › Olá! Sou a assistente virtual da AutoSeguro. Qual é o ano do modelo do seu carro?
 - **lead** › o carro é 2018 mas o modelo é 2019
 - **agente** [confirmation] › Só pra confirmar: modelo 2019?
 - **lead** › sei lá
@@ -305,7 +305,7 @@
 #### `handoff-ready-to-close` — handoff:READY_TO_CLOSE
 
 - **lead** › oi
-- **agente** [text] › Olá! Sou a assistente virtual da AutoSeguro. Qual é o ano do modelo do seu carro?
+- **agente** [question] › Olá! Sou a assistente virtual da AutoSeguro. Qual é o ano do modelo do seu carro?
 - **lead** › é um onix 2019, tenho 34 anos e moro no cep 30130-010
 - **agente** [question] › Anotado: modelo 2019, 34 anos e CEP 30130-010. O que você quer cobrir? Só colisão, roubo e furto; também danos a terceiros e vidros; ou também carro reserva e assistência 24h?
 - **lead** › só roubo e colisão
@@ -324,7 +324,7 @@
 #### `handoff-conversation-stalled` — handoff:CONVERSATION_STALLED (pergunta_repetida:veiculo_ano)
 
 - **lead** › oi
-- **agente** [text] › Olá! Sou a assistente virtual da AutoSeguro. Qual é o ano do modelo do seu carro?
+- **agente** [question] › Olá! Sou a assistente virtual da AutoSeguro. Qual é o ano do modelo do seu carro?
 - **lead** › hmm
 - **agente** [text] › Não entendi bem. Qual é o ano do modelo do seu carro?
 - **lead** › não sei
@@ -335,7 +335,7 @@
 #### `handoff-price-objection-oferta-recusada` — handoff:PRICE_OBJECTION
 
 - **lead** › oi
-- **agente** [text] › Olá! Sou a assistente virtual da AutoSeguro. Qual é o ano do modelo do seu carro?
+- **agente** [question] › Olá! Sou a assistente virtual da AutoSeguro. Qual é o ano do modelo do seu carro?
 - **lead** › é um onix 2019, tenho 34 anos e moro no cep 30130-010
 - **agente** [question] › Anotado: modelo 2019, 34 anos e CEP 30130-010. O que você quer cobrir? Só colisão, roubo e furto; também danos a terceiros e vidros; ou também carro reserva e assistência 24h?
 - **lead** › quero cobrir terceiros e vidros também
@@ -356,7 +356,7 @@
 #### `handoff-price-objection-oferta-sem-resposta` — handoff:PRICE_OBJECTION (oferta_sem_resposta)
 
 - **lead** › oi
-- **agente** [text] › Olá! Sou a assistente virtual da AutoSeguro. Qual é o ano do modelo do seu carro?
+- **agente** [question] › Olá! Sou a assistente virtual da AutoSeguro. Qual é o ano do modelo do seu carro?
 - **lead** › é um onix 2019, tenho 34 anos e moro no cep 30130-010
 - **agente** [question] › Anotado: modelo 2019, 34 anos e CEP 30130-010. O que você quer cobrir? Só colisão, roubo e furto; também danos a terceiros e vidros; ou também carro reserva e assistência 24h?
 - **lead** › quero cobrir terceiros e vidros também
@@ -379,7 +379,7 @@
 #### `handoff-price-objection-sem-plano-mais-barato` — handoff:PRICE_OBJECTION
 
 - **lead** › oi
-- **agente** [text] › Olá! Sou a assistente virtual da AutoSeguro. Qual é o ano do modelo do seu carro?
+- **agente** [question] › Olá! Sou a assistente virtual da AutoSeguro. Qual é o ano do modelo do seu carro?
 - **lead** › é um onix 2019, tenho 34 anos e moro no cep 30130-010
 - **agente** [question] › Anotado: modelo 2019, 34 anos e CEP 30130-010. O que você quer cobrir? Só colisão, roubo e furto; também danos a terceiros e vidros; ou também carro reserva e assistência 24h?
 - **lead** › só roubo e colisão
@@ -398,7 +398,7 @@
 #### `handoff-out-of-scope` — handoff:OUT_OF_SCOPE
 
 - **lead** › oi
-- **agente** [text] › Olá! Sou a assistente virtual da AutoSeguro. Qual é o ano do modelo do seu carro?
+- **agente** [question] › Olá! Sou a assistente virtual da AutoSeguro. Qual é o ano do modelo do seu carro?
 - **lead** › quero um seguro de vida
 - **agente** [text] › Isso foge do que eu consigo ajudar: eu só faço cotação de seguro de carro. Qual é o ano do modelo do seu carro?
 - **lead** › e um seguro de viagem?
@@ -419,14 +419,14 @@
 #### `sem-handoff-desconto-antes-da-cotacao` — open
 
 - **lead** › oi
-- **agente** [text] › Olá! Sou a assistente virtual da AutoSeguro. Qual é o ano do modelo do seu carro?
+- **agente** [question] › Olá! Sou a assistente virtual da AutoSeguro. Qual é o ano do modelo do seu carro?
 - **lead** › me dá um desconto de 50%?
 - **agente** [text] › Isso não é comigo: eu só mostro o valor que sai da cotação, e não consigo prometer nada além dele. Qual é o ano do modelo do seu carro?
 
 #### `sem-handoff-objecao-com-alternativa-aceita` — quoted
 
 - **lead** › oi
-- **agente** [text] › Olá! Sou a assistente virtual da AutoSeguro. Qual é o ano do modelo do seu carro?
+- **agente** [question] › Olá! Sou a assistente virtual da AutoSeguro. Qual é o ano do modelo do seu carro?
 - **lead** › é um onix 2019, tenho 34 anos e moro no cep 30130-010
 - **agente** [question] › Anotado: modelo 2019, 34 anos e CEP 30130-010. O que você quer cobrir? Só colisão, roubo e furto; também danos a terceiros e vidros; ou também carro reserva e assistência 24h?
 - **lead** › quero cobrir terceiros e vidros também

@@ -278,24 +278,6 @@ def test_the_echo_is_not_used_when_the_model_text_is_not_the_one_delivered_anywa
 
 
 # --- a apresentacao na primeira resposta (item 5) -----------------------------------------------------------------------------------------------------
-@pytest.mark.parametrize("written,shown", [
-    ("Qual é o ano do modelo do seu carro?", "Qual é o ano do modelo do seu carro?"),
-    ("Olá! Tudo bem? Qual é o ano do carro?", "Tudo bem? Qual é o ano do carro?"),
-    ("Oi, tudo certo! Me passa o ano do carro?", "Tudo certo! Me passa o ano do carro?"),
-    ("bom dia, qual é o ano do carro?", "Qual é o ano do carro?"),
-    ("Olá!", "")])
-def test_introduced_puts_the_house_greeting_first_and_swaps_the_models_own_greeting_for_it(written, shown):
-    from autoseguro.orchestrator import _introduced
-    assert _introduced(written) == f"{templates.GREETING} {shown}".rstrip()
-
-
-@pytest.mark.parametrize("text", [templates.GREETING + " Qual é o ano do carro?", "Olá! Sou a assistente virtual da AutoSeguro, e vou te ajudar. Qual é o ano?",
-                                  "Olá! Sou a Assistente Virtual da AutoSeguro. Qual é o ano?", "Sou a assistente virtual daqui. Qual é o ano?"])
-def test_introduced_never_duplicates_an_introduction_the_text_already_has(text):
-    from autoseguro.orchestrator import _introduced
-    assert _introduced(text) == text
-
-
 def test_the_mock_and_the_first_reply_say_the_introduction_exactly_once():
     h = Harness()
     r = h.say(GREET)

@@ -158,15 +158,26 @@ def test_each_reply_source_lands_in_exactly_one_bucket(meta, bucket, rules):
 
 
 def test_a_normal_conversation_splits_into_model_text_product_questions_and_templates():
-    h = Harness(ess())
-    h.run(*HAPPY)
+    """A abertura e template sempre (D11); o texto do modelo so chega num turno neutro sem dado novo (aqui, a 2a mensagem) e o resto e eco, pergunta do produto e cotacao."""
+    llm = ScriptedLLM(reply_json("Qual é o ano do modelo do seu carro?"), reply_json("Sem pressa! Qual é o ano do modelo do seu carro?"))
+    h = Harness(llm=llm)
+    h.run(GREET, "deixa eu ver o documento")
     o = origins_of(h.store.messages(h.trace))
-    assert dict(o.counts) == {"llm": 1, "trocado_produto": 2, "template": 1} and o.total == 4 and o.candidates == 1
-    assert dict(o.sources) == {"template_quote": 1}
+    assert dict(o.counts) == {"llm": 1, "template": 1} and o.total == 2 and o.candidates == 1
+    assert dict(o.sources) == {"template_opening": 1}
     md = export_markdown(h.store, h.trace)
     assert "## De onde veio cada texto que o lead leu" in md
     assert "| Texto do modelo, entregue | 1 | `llm` | — |" in md
-    assert "**Fração do modelo:** 1 de 4 respostas ao lead (25%); 1 de 1 em que o texto do modelo poderia ter chegado (100%). **Barrados pelo guardrail:** 0 (0% das vezes" in md
+    assert "**Fração do modelo:** 1 de 2 respostas ao lead (50%); 1 de 1 em que o texto do modelo poderia ter chegado (100%). **Barrados pelo guardrail:** 0 (0% das vezes" in md
+
+
+def test_the_happy_path_has_no_model_text_at_all_the_opening_the_echo_and_the_quote_are_the_products():
+    h = Harness(ess())
+    h.run(*HAPPY)
+    o = origins_of(h.store.messages(h.trace))
+    assert dict(o.counts) == {"trocado_produto": 2, "template": 2} and o.total == 4 and o.candidates == 0
+    assert dict(o.sources) == {"template_opening": 1, "template_quote": 1}
+    assert "**Fração do modelo:** 0 de 4 respostas ao lead (0%); 0 de 0 em que o texto do modelo poderia ter chegado (—)." in export_markdown(h.store, h.trace)
 
 
 def test_a_reply_the_guardrail_blocked_is_counted_with_the_rule_that_blocked_it_and_its_text_is_exported_for_judging():
@@ -269,9 +280,9 @@ def test_a_provider_filter_is_not_counted_as_a_guardrail_block_and_neither_is_th
     h = Harness(failures=["content_filter", "content_filter"])
     h.say(GREET)
     assert dict(origins_of(h.store.messages(h.trace)).counts) == {"sem_saida": 1}
-    h2 = Harness(llm=ScriptedLLM(reply_json("Anotado!")))      # nao pergunta o dado pendente: o orquestrador usa a pergunta do produto
-    h2.say(GREET)
-    assert dict(origins_of(h2.store.messages(h2.trace)).counts) == {"trocado_orquestrador": 1}
+    h2 = Harness(llm=ScriptedLLM(reply_json("Anotado!")))      # depois da abertura, um texto que nao pergunta o dado pendente: o orquestrador usa a pergunta do produto
+    h2.run(GREET, "deixa eu ver o documento")
+    assert dict(origins_of(h2.store.messages(h2.trace)).counts) == {"template": 1, "trocado_orquestrador": 1}
 
 
 def test_the_hold_message_is_not_a_reply():
@@ -288,14 +299,15 @@ def test_the_index_has_the_fraction_per_conversation_and_the_total(tmp_path):
     h.run(*HAPPY)
     t2 = h.orc.start()
     h.orc.handle(t2, GREET)
+    h.orc.handle(t2, "deixa eu ver o documento")           # sem dado novo: aqui o texto do modelo ("Não entendi bem. Qual é o ano…") chega ao lead
     t3 = h.orc.start()
     h.orc.handle(t3, "prefiro falar com uma pessoa")
     out = tmp_path / "logs"
     assert export_log.main(["--db", str(db), "--trace", "all", "--out", str(out)]) == 0
     index = (out / "index.md").read_text(encoding="utf-8")
-    assert f"| `{h.trace}` | quoted |" in index and "| 1/4 | 0 |" in index and f"| `{t2}` | open |" in index and "| 1/1 | 0 |" in index and f"| `{t3}` | handoff | HUMAN_REQUESTED |" in index and "| 0/1 | 0 |" in index
+    assert f"| `{h.trace}` | quoted |" in index and "| 0/4 | 0 |" in index and f"| `{t2}` | open |" in index and "| 1/2 | 0 |" in index and f"| `{t3}` | handoff | HUMAN_REQUESTED |" in index and "| 0/1 | 0 |" in index
     assert "## Total das 3 conversas: de onde veio cada texto que o lead leu" in index
-    assert "**Fração do modelo:** 2 de 6 respostas ao lead (33%); 2 de 2 em que o texto do modelo poderia ter chegado (100%)." in index
+    assert "**Fração do modelo:** 1 de 7 respostas ao lead (14%); 1 de 1 em que o texto do modelo poderia ter chegado (100%)." in index
     assert "prefiro falar" not in index
 
 
