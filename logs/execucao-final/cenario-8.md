@@ -1,6 +1,6 @@
-# Log de execução — `trc_96271ffba662`
+# Log de execução — `trc_42844886698b`
 
-- **LLM:** `openrouter/dots-studio/dots-3-note-preview:free` (modo `real`) · **criada em** 2026-10-21T20:15:39.767297+00:00 · **atualizada em** 2026-10-21T20:15:39.768980+00:00
+- **LLM:** `openrouter/dots-studio/dots-3-note-preview:free` (modo `real`) · **criada em** 2026-10-22T01:30:12.551997+00:00 · **atualizada em** 2026-10-22T01:30:12.553502+00:00
 - **Desfecho:** `handoff` · motivo `MEDIA_UNREADABLE` · detalhe `midia_repetida:audio`
 - **Mensagens:** 4 · **cotações:** 0 · **tentativas da `/quote`:** 0
 
@@ -37,10 +37,10 @@ _Nenhum texto do modelo foi barrado pelo guardrail._
 
 | # | Quando (UTC) | Quem | Tipo | Texto (já mascarado) |
 |---|---|---|---|---|
-| 1 | 20:15:39.767 | lead | text | [audio] mensagem de voz (12s) |
-| 2 | 20:15:39.768 | agente | question | Olá! Sou a assistente virtual da AutoSeguro. Por aqui eu só leio mensagens de texto, então não consegui abrir o seu áudio. Qual é o ano do modelo do seu carro? |
-| 3 | 20:15:39.768 | lead | text | [audio] mensagem de voz (5s) |
-| 4 | 20:15:39.768 | agente | handoff | Continuo sem conseguir abrir o que você enviou: por aqui eu só leio mensagens de texto. Um consultor vai dar continuidade à sua conversa, e o que você me contou ficou registrado. |
+| 1 | 01:30:12.552 | lead | text | [audio] mensagem de voz (12s) |
+| 2 | 01:30:12.552 | agente | question | Olá! Sou a assistente virtual da AutoSeguro. Por aqui eu só leio mensagens de texto, então não consegui abrir o seu áudio. Qual é o ano do modelo do seu carro? |
+| 3 | 01:30:12.552 | lead | text | [audio] mensagem de voz (5s) |
+| 4 | 01:30:12.553 | agente | handoff | Continuo sem conseguir abrir o que você enviou: por aqui eu só leio mensagens de texto. Um consultor vai dar continuidade à sua conversa, e o que você me contou ficou registrado. |
 
 ## Decisões do agente, mensagem a mensagem
 
@@ -64,7 +64,7 @@ _Nenhuma chamada à `/quote` nesta conversa._
 
 ```json
 {
-  "created_at": "2026-10-21T20:15:39.768692+00:00",
+  "created_at": "2026-10-22T01:30:12.553191+00:00",
   "failed_component": null,
   "last_quote": null,
   "missing": [
@@ -87,21 +87,21 @@ _Nenhuma chamada à `/quote` nesta conversa._
     {
       "role": "lead",
       "text": "[audio] mensagem de voz (12s)",
-      "ts": "2026-10-21T20:15:39.767797+00:00"
+      "ts": "2026-10-22T01:30:12.552423+00:00"
     },
     {
       "role": "agent",
       "text": "Olá! Sou a assistente virtual da AutoSeguro. Por aqui eu só leio mensagens de texto, então não consegui abrir o seu áudio. Qual é o ano do modelo do seu carro?",
-      "ts": "2026-10-21T20:15:39.768055+00:00"
+      "ts": "2026-10-22T01:30:12.552647+00:00"
     },
     {
       "role": "lead",
       "text": "[audio] mensagem de voz (5s)",
-      "ts": "2026-10-21T20:15:39.768389+00:00"
+      "ts": "2026-10-22T01:30:12.552920+00:00"
     }
   ],
   "schema_version": 1,
   "told_to_lead": "Continuo sem conseguir abrir o que você enviou: por aqui eu só leio mensagens de texto. Um consultor vai dar continuidade à sua conversa, e o que você me contou ficou registrado.",
-  "trace_id": "trc_96271ffba662"
+  "trace_id": "trc_42844886698b"
 }
 ```

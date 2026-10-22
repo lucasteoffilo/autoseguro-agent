@@ -1,6 +1,6 @@
-# Log de execução — `trc_3a56c6f16fab`
+# Log de execução — `trc_eeabfe52aeaf`
 
-- **LLM:** `openrouter/dots-studio/dots-3-note-preview:free` (modo `real`) · **criada em** 2026-10-21T20:14:11.693476+00:00 · **atualizada em** 2026-10-21T20:14:17.619381+00:00
+- **LLM:** `openrouter/dots-studio/dots-3-note-preview:free` (modo `real`) · **criada em** 2026-10-22T01:28:48.688340+00:00 · **atualizada em** 2026-10-22T01:28:55.588973+00:00
 - **Desfecho:** `refused`
 - **Mensagens:** 4 · **cotações:** 1 · **tentativas da `/quote`:** 1
 
@@ -18,14 +18,14 @@
 
 | Origem | Mensagens | `reply_source` | Detalhe |
 |---|---|---|---|
-| Texto do modelo, entregue | 1 | `llm` | — |
+| Texto do modelo, entregue | 0 | `llm` | — |
 | Texto do modelo barrado pelo guardrail | 0 | `template_fallback` | — |
 | Sem saída utilizável do modelo (falha, filtro do provedor, saída inválida) | 0 | `template_fallback`, `sem_saida` | — |
 | Texto do modelo trocado pelo orquestrador (não perguntava o dado pendente, ou tinha PII) | 0 | `template_question` | — |
 | Trocado por desenho (a pergunta de necessidade, as confirmações e o eco do que o lead acabou de dar são do produto) | 0 | `template_question`, `template_echo`, e `template_fallback` nesses turnos | — |
-| Template por desenho (risco, cotação, recusa, handoff, estado, mídia) | 1 | `template_*` | template_refusal ×1 |
+| Template por desenho (risco, cotação, recusa, handoff, estado, mídia) | 2 | `template_*` | template_opening ×1, template_refusal ×1 |
 
-**Fração do modelo:** 1 de 2 respostas ao lead (50%); 1 de 1 em que o texto do modelo poderia ter chegado (100%). **Barrados pelo guardrail:** 0 (0% das vezes em que o texto do modelo poderia ter chegado).
+**Fração do modelo:** 0 de 2 respostas ao lead (0%); 0 de 0 em que o texto do modelo poderia ter chegado (—). **Barrados pelo guardrail:** 0 (— das vezes em que o texto do modelo poderia ter chegado).
 
 ### Textos do modelo barrados pelo guardrail
 
@@ -37,30 +37,30 @@ _Nenhum texto do modelo foi barrado pelo guardrail._
 
 | # | Quando (UTC) | Quem | Tipo | Texto (já mascarado) |
 |---|---|---|---|---|
-| 1 | 20:14:11.693 | lead | text | oi, quero cotar um fusca |
-| 2 | 20:14:13.545 | agente | text | Olá! Sou a assistente virtual da AutoSeguro. Que bom que você quer cotar o Fusca. Para começarmos, qual é o ano do modelo do seu carro? |
-| 3 | 20:14:13.547 | lead | text | é um fusca 1998, tenho 45 anos e moro no cep 01310-100 |
-| 4 | 20:14:17.618 | agente | refusal | Não consigo cotar este perfil: a seguradora não aceita veículos com mais de 20 anos. ⏎ Dados usados: modelo 1998 e 45 anos. ⏎ Por isso vou encerrar por aqui. Obrigado pelo interesse! |
+| 1 | 01:28:48.688 | lead | text | oi, quero cotar um fusca |
+| 2 | 01:28:50.784 | agente | question | Olá! Sou a assistente virtual da AutoSeguro. Qual é o ano do modelo do seu carro? |
+| 3 | 01:28:50.786 | lead | text | é um fusca 1998, tenho 45 anos e moro no cep 01310-100 |
+| 4 | 01:28:55.588 | agente | refusal | Não consigo cotar este perfil: a seguradora não aceita veículos com mais de 20 anos. ⏎ Dados usados: modelo 1998 e 45 anos. ⏎ Por isso vou encerrar por aqui. Obrigado pelo interesse! |
 
 ## Decisões do agente, mensagem a mensagem
 
 | # | Tipo | Registro (`meta`) |
 |---|---|---|
 | 1 | lead/text | — |
-| 2 | agent/text | intent="greeting"; reply_source="llm"; asked=["veiculo_ano", "ask"]; attempt=1; llm_latency_s=1.848; tokens=1511→46 |
+| 2 | agent/question | intent="greeting"; reply_source="template_opening"; asked=["veiculo_ano", "ask"]; attempt=1; llm_latency_s=2.09; tokens=1511→44 |
 | 3 | lead/text | — |
-| 4 | agent/refusal | reply_source="template_refusal"; precheck="recusa_provavel"; precheck_kind="vehicle_too_old"; refusal_kind="vehicle_too_old"; attempt=1; llm_latency_s=2.756; limiter_wait_s=1.299; tokens=1585→153 |
+| 4 | agent/refusal | reply_source="template_refusal"; precheck="recusa_provavel"; precheck_kind="vehicle_too_old"; refusal_kind="vehicle_too_old"; attempt=1; llm_latency_s=3.722; limiter_wait_s=1.059; tokens=1569→147 |
 
 ## Cotações e tentativas da `/quote`
 
-### `qte_c2ac2e59d44b` — precheck · refused · plano `essencial` · 0.006s
+### `qte_bbc31fbf9fcd` — precheck · refused · plano `essencial` · 0.008s
 
 - **Entrada normalizada enviada:** `{"idade": 45, "plano_id": "essencial", "veiculo_ano": 1998}`
 - **Resposta:** {"motivo": "Veiculo com mais de 20 anos nao e aceito."}
 
 | Tentativa | Início (s) | Latência (s) | HTTP | Erro | Decisão |
 |---|---|---|---|---|---|
-| 1 | 0.0 | 0.006 | 422 | refused | stop_refused |
+| 1 | 0.0 | 0.007 | 422 | refused | stop_refused |
 
 ## Estado final dos slots
 
